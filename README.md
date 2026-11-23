@@ -10,7 +10,7 @@
 
 1. Download the Windows ZIP and extract the full folder to a writable location.
 2. Double-click **CT QA Manager.exe**. The app opens in its own window.
-3. Choose **Open folder** for local PDFs, or save scanner locations under **Settings**. Network shares require access to the network that hosts them.
+3. Choose **Folders → Open folder** for local PDFs, or save scanner locations under **Settings**. Network shares require access to the network that hosts them.
 
 Use **Saved PDFs** to open the **QA Library** next to the program. Keep the full program folder together when copying to another computer or USB drive. Before upgrading, keep a copy of your QA Library and export a settings and filing backup.
 

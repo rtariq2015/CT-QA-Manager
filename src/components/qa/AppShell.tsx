@@ -1,5 +1,5 @@
 import { Link, Outlet } from "@tanstack/react-router";
-import { Activity, CalendarCheck, ClipboardCheck, FileStack, FolderOpen, LayoutDashboard, Moon, Sun, FolderTree, Download, Settings, HelpCircle, Keyboard, MoreHorizontal, ScrollText } from "lucide-react";
+import { Activity, CalendarCheck, ClipboardCheck, FileStack, LayoutDashboard, Moon, Sun, FolderTree, Download, Settings, HelpCircle, Keyboard, MoreHorizontal, ScrollText } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useQa } from "@/lib/qa-store";
 import { cn } from "@/lib/utils";
@@ -43,7 +43,7 @@ const SHORTCUTS: [string, string][] = [
 
 export function AppShell() {
   const { mode, setMode, pending, theme, toggleTheme } = useQa();
-  const { busy, openFolder, inputEl } = useFolderReader(undefined, true);
+  useFolderReader(undefined, true);
   const [isDesktop, setIsDesktop] = useState(false);
   useEffect(() => setIsDesktop(!!desktop()), []);
   const [keys, setKeys] = useState(false);
@@ -102,10 +102,6 @@ export function AppShell() {
           <div className="md:hidden"><Brand small /></div>
           <div className="order-last w-full min-w-0 md:order-none md:w-auto md:flex-1"><ScannerLights /></div>
           <div className="ml-auto flex items-center gap-1">
-            <Button variant="outline" onClick={openFolder} disabled={!!busy} className="px-3" aria-label="Open a folder of QA reports" title="Open a folder on your computer">
-              <FolderOpen className="size-4" /><span className="hidden sm:inline">{busy ? "Reading…" : "Open folder"}</span>
-            </Button>
-            {inputEl}
             {isDesktop && (
               <Button variant="outline" className="px-3" aria-label="Open saved PDFs folder" title="Open the QA Library folder with every saved PDF, organized by scanner, year, month and type"
                 onClick={async () => { const r = await desktop()?.openLibrary(); if (r && !r.ok) log("error", "folder", `Could not open ${r.path}: ${r.error}`); }}>
