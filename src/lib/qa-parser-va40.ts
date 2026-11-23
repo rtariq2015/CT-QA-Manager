@@ -5,7 +5,7 @@ import type { PdfTextPage, PrintedSection, PrintedStatus } from "./qa-parser";
 // "Test (IEC Constancy)  date time  OK|Not OK", single tube (System A) tables
 // with a "Tolerance: a … b" header line. Only printed values and limits are read.
 
-const NUM = "[-+]?\\d{1,3}(?:,\\d{3})*(?:\\.\\d+)?|[-+]?\\d+(?:\\.\\d+)?";
+const NUM = "[-+]?(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?(?:[eE][-+]?\\d+)?";
 const RANGE = new RegExp(`(${NUM})\\s*(?:…|\\.\\.\\.)\\s*(${NUM})`, "g");
 const num = (s: string) => Number(s.replaceAll(",", ""));
 const ranges = (s: string) => [...s.matchAll(RANGE)].map(m => [num(m[1] ?? ""), num(m[2] ?? "")] as [number, number]);
@@ -38,8 +38,8 @@ export function parseVa40Pages(pages: PdfTextPage[], filename: string, sizeKb: n
   // Summary rows; the OK/Not OK may sit on the following line.
   const sections: PrintedSection[] = [];
   let stamp: { date: string; time: string } | undefined;
-  const summaryPage = pages.find(p => p.lines.some(l => /^\s*Summary\s*$/.test(l)));
-  if (summaryPage) {
+  const summaryPages = pages.filter(p => p.lines.some(l => /^\s*Summary\s*$/.test(l)));
+  for (const summaryPage of summaryPages) {
     const text = summaryPage.lines.join("\n").replaceAll("\u00a0", " ");
     const row = /([A-Z][A-Za-z/ ]+?)(?:\s*\(IEC Constancy\))?\s+(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)\s*\n?\s*(Not OK|NOT OK|OK)\b/g;
     for (const m of text.matchAll(row)) {
@@ -55,11 +55,16 @@ export function parseVa40Pages(pages: PdfTextPage[], filename: string, sizeKb: n
   }
 
   const measurements: Measurement[] = [];
+  let extractionIncomplete = false;
   let test = ""; let metric: MetricId | undefined; let mode = ""; let kv = 120; let kernel = "";
   type Col = { metric: MetricId; band: [number, number]; position?: string; skipRef?: boolean };
   let cols: Col[] = []; let kind: "rows" | "slice" | "marker" | "table" | "" = "";
   let pending: MetricId[] = []; let pendingPos: (string | undefined)[] = []; let pendingRef = false; let markerBuf: string[] = [];
   const push = (m: MetricId, value: number, band: [number, number], page: number, extra: Partial<Measurement> & { where: string }) => {
+    if (![value, ...band].every(Number.isFinite) || band[0] > band[1]) {
+      extractionIncomplete = true;
+      return;
+    }
     const { where, ...rest } = extra;
     measurements.push({ metric: m, context: `${kv} kV · ${mode || test} · Tube A · ${where}${kernel ? ` · ${kernel}` : ""}`, tube: "A", mode: mode || test, kv, kernel, value, unit: UNIT[m], lower: band[0], upper: band[1], baseline: null, page, limitSource: "printed", ...rest });
   };
@@ -96,12 +101,21 @@ export function parseVa40Pages(pages: PdfTextPage[], filename: string, sizeKb: n
         if (/Tolerance/.test(line) || ranges(line).length) continue;
       }
 
-      if (kind === "rows" && cols.length === pending.length && cols.length) {
+      if (kind === "rows") {
         const r = new RegExp(`^(\\d+)\\s+((?:(?:${NUM})\\s*)+)`).exec(line);
         if (!r?.[1] || !r[2]) continue;
-        let vals = (r[2].match(new RegExp(NUM, "g")) ?? []).map(num);
-        if (cols[0]?.skipRef) vals = vals.filter((_, j) => j % 2 === 0);
-        cols.forEach((c, j) => { const val = vals[j]; if (val !== undefined) push(c.metric, val, c.band, p.page, { slice: Number(r[1]), where: `Slice ${r[1]}${c.position ? ` · ${c.position}` : ""}` }); });
+        const vals = (r[2].match(new RegExp(NUM, "g")) ?? []).map(num);
+        const stride = pendingRef ? 2 : 1;
+        if (cols.length !== pending.length || vals.length !== cols.length * stride) {
+          extractionIncomplete = true;
+          continue;
+        }
+        cols.forEach((c, j) => {
+          const value = vals[j * stride];
+          const baseline = c.skipRef ? (vals[j * stride + 1] ?? null) : null;
+          if (value === undefined) return;
+          push(c.metric, value, c.band, p.page, { slice: Number(r[1]), baseline, where: `Slice ${r[1]}${c.position ? ` · ${c.position}` : ""}` });
+        });
       } else if (kind === "slice") {
         const r = new RegExp(`^(\\d+)\\s+(${NUM})\\s+(${NUM})\\s+(${NUM})\\s*(?:…|\\.\\.\\.)\\s*(${NUM})`).exec(line);
         if (r) push("slice", num(r[2]!), [num(r[4]!), num(r[5]!)], p.page, { slice: Number(r[1]), baseline: num(r[3]!), where: `Slice ${r[1]}` });
@@ -134,6 +148,7 @@ export function parseVa40Pages(pages: PdfTextPage[], filename: string, sizeKb: n
     id: `local-${filename}-${stamp.date}-${stamp.time}`, scanner: "xcite", date: stamp.date, time: stamp.time, fileName: filename, sizeKb,
     type: "Other", suggested, confidence: "uncertain", needsReview: true, measurements: unique, pages: pages.length, source: "uploaded",
     printedStatus, printedSections: sections, software: /Software\s+Version\s+(\S+)/.exec(all)?.[1] ?? "Not available",
-    extractionNotes: ["Partial extraction: tables with printed limits only. Check the original PDF for other tests.", ...(sections.length ? [] : ["Printed summary not available; no QA result inferred."]), ...(unique.length ? [] : ["No supported measurement tables found."])],
+    extractionIncomplete,
+    extractionNotes: ["Partial extraction: tables with printed limits only. Check the original PDF for other tests.", ...(sections.length ? [] : ["Printed summary not available; no QA result inferred."]), ...(unique.length ? [] : ["No supported measurement tables found."]), ...(extractionIncomplete ? ["Some rows do not have readable measurements and matching printed limits."] : [])],
   };
 }

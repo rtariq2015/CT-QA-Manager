@@ -17,13 +17,22 @@ describe("auto-filing", () => {
   it("keeps Other-suggested reports in review", () => {
     expect(triage({ ...base, suggested: "Other" }).needsReview).toBe(true);
   });
-  it("files reports without readings as Other automatically", () => {
+  it("keeps reports without readings in review", () => {
     const r = triage({ ...base, measurements: [] });
-    expect(r.type).toBe("Other"); expect(r.needsReview).toBe(false); expect(r.autoFiled).toBe(true);
+    expect(r).toMatchObject({ type: "Other", needsReview: true });
+    expect(r.autoFiled).toBeUndefined();
+    expect(reviewReason(r)).toMatch(/measurements/i);
   });
-  it("files reports with no printed result as Other automatically", () => {
+  it("keeps reports with no printed result in review", () => {
     const r = triage({ ...base, printedStatus: "Not available" });
-    expect(r.type).toBe("Other"); expect(r.needsReview).toBe(false);
+    expect(r).toMatchObject({ type: "Other", needsReview: true });
+    expect(r.autoFiled).toBeUndefined();
+    expect(reviewReason(r)).toMatch(/printed summary/i);
+  });
+  it("keeps reports with an incomplete supported measurement table in review", () => {
+    const r = triage({ ...base, extractionIncomplete: true });
+    expect(r.needsReview).toBe(true);
+    expect(reviewReason(r)).toMatch(/Some measurements/i);
   });
   it("still reviews a readable non-routine report", () => {
     expect(reviewReason({ ...base, suggested: "Other" })).not.toBeNull();

@@ -2,10 +2,8 @@ import { QueryClient } from "@tanstack/react-query";
 import { createHashHistory, createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 
-// Offline desktop build (Electron loads index.html from disk): hash history keeps navigation
-// working under file:// where the browser history API can't change the path. The web build is
-// unaffected — it keeps the default browser history. Guarded to the browser because hash history
-// needs `window`, and the router is also created server-side while the static shell is rendered.
+// Desktop routes use hashes so every route loads from the same bundled index.html. The router
+// is also created during static rendering, where hash history cannot access window.
 const DESKTOP = typeof window !== "undefined" && import.meta.env["VITE_DESKTOP"] === "1";
 
 export const getRouter = () => {

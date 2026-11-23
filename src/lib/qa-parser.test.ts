@@ -46,6 +46,17 @@ describe("Siemens printed report rules", () => {
   it("does not manufacture limits for a table without printed tolerances", () => {
     expect(read(["1. Quality Daily Noise", "Results for System A", "Slice 1 3.28 HU"]).measurements).toHaveLength(0);
   });
+  it("does not reuse a later slice's printed limits for a missing band", () => {
+    const report = read([
+      "1. Quality Daily Noise",
+      "Results for System A",
+      "Slice 1 6.1 HU",
+      "Slice 2 3.1 HU 2.5 ... 4.4 HU",
+    ]);
+    expect(report.extractionIncomplete).toBe(true);
+    expect(report.measurements).toHaveLength(1);
+    expect(report.measurements[0]).toMatchObject({ slice: 2, value: 3.1, lower: 2.5, upper: 4.4 });
+  });
   it("does not turn printed NOT OK into OK when filing a report", () => {
     const report = read([]);
     const filed = { ...report, type: "Daily", needsReview: false };

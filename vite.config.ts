@@ -20,12 +20,10 @@ export default defineConfig({
     server: { entry: "server" },
     ...(DESKTOP
       ? {
-          spa: {
-            enabled: true,
-            prerender: { enabled: true, outputPath: "index.html", crawlLinks: false },
-          },
+          pages: [{ path: "/", prerender: { outputPath: "index.html" } }],
+          prerender: { enabled: true, crawlLinks: false, autoStaticPathsDiscovery: false },
         }
       : {}),
   },
-  ...(DESKTOP ? { vite: { base: "./" } } : {}),
+  ...(DESKTOP ? { nitro: false, vite: { base: "./" } } : {}),
 });

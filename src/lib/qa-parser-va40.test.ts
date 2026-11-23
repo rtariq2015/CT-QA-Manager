@@ -27,4 +27,38 @@ describe("SOMATOM X.cite (VA40A) reports", () => {
     expect(r.measurements.map(m => m.value)).toEqual([4, -1]);
     expect(triage(r).needsReview).toBe(true);
   });
+  it("keeps a printed exception on a later summary page", () => {
+    const continuation: PdfTextPage = {
+      page: 4,
+      lines: ["Summary", "Lightmarker (IEC Constancy) 08/01/2025 6:17:42 AM Not OK"],
+    };
+    const noise: PdfTextPage = {
+      page: 5,
+      lines: ["2 Noise (IEC Constancy)", "Slice Results for System A [HU] Status", "Tolerance: 6.83 … 9.25", "6 8.21 In Tol."],
+    };
+    const r = parseSiemensPages([cover, dailySummary, continuation, noise], "continued.pdf", 10);
+    expect(r.printedSections).toContainEqual({ label: "Lightmarker", status: "NOT OK", page: 4 });
+    expect(r.printedStatus).toBe("NOT OK");
+    expect(triage(r).needsReview).toBe(true);
+  });
+  it("reads complete numbers with four or more digits", () => {
+    const page: PdfTextPage = {
+      page: 4,
+      lines: ["2 Noise (IEC Constancy)", "Slice Results for System A [HU] Status", "Tolerance: 1000 … 2,000", "6 1500 In Tol."],
+    };
+    const r = parseSiemensPages([cover, dailySummary, page], "numbers.pdf", 10);
+    expect(r.measurements).toHaveLength(1);
+    expect(r.measurements[0]).toMatchObject({ value: 1500, lower: 1000, upper: 2000 });
+  });
+  it("retains the printed MTF reference values", () => {
+    const page: PdfTextPage = {
+      page: 4,
+      lines: ["2 MTF (IEC Constancy)", "Slice 50% [lp/cm] 10% [lp/cm]", "Tolerance: 10 … 20 Tolerance: 20 … 30", "6 12.9 12.2 24.5 24.7 In Tol."],
+    };
+    const r = parseSiemensPages([cover, dailySummary, page], "reference.pdf", 10);
+    expect(r.measurements).toMatchObject([
+      { metric: "mtf50", value: 12.9, baseline: 12.2 },
+      { metric: "mtf10", value: 24.5, baseline: 24.7 },
+    ]);
+  });
 });

@@ -42,7 +42,7 @@ const SHORTCUTS: [string, string][] = [
 ];
 
 export function AppShell() {
-  const { pending, theme, toggleTheme } = useQa();
+  const { mode, setMode, pending, theme, toggleTheme } = useQa();
   const { busy, openFolder, inputEl } = useFolderReader(undefined, true);
   const [isDesktop, setIsDesktop] = useState(false);
   useEffect(() => setIsDesktop(!!desktop()), []);
@@ -73,12 +73,12 @@ export function AppShell() {
   const badge = (to: string) => to === "/review" && pending.length > 0 && (
     <span className="ml-auto rounded-full bg-sidebar-primary px-2 text-xs font-semibold text-sidebar-primary-foreground">{pending.length}</span>
   );
-  const linkCls = "flex items-center gap-3 rounded-md px-3 py-2 text-[15px] text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground";
+  const linkCls = "flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground";
   const active = { className: "bg-sidebar-accent !text-sidebar-accent-foreground font-medium" };
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
-      <aside className="hidden shrink-0 flex-col bg-sidebar text-sidebar-foreground md:sticky md:top-0 md:flex md:h-screen md:w-60">
+      <aside className="hidden shrink-0 flex-col bg-sidebar text-sidebar-foreground md:sticky md:top-0 md:flex md:h-screen md:w-56">
         <Brand />
         <nav className="flex flex-col gap-5 overflow-y-auto px-3" aria-label="Workspaces">
           {GROUPS.map((g) => (
@@ -94,7 +94,7 @@ export function AppShell() {
             </div>
           ))}
         </nav>
-        <p className="mt-auto p-5 text-xs leading-relaxed text-sidebar-foreground/50">PDFs you open stay in this browser tab and are never uploaded.</p>
+        <p className="mt-auto p-5 text-xs leading-relaxed text-sidebar-foreground/70">QA PDFs are processed locally.</p>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -119,13 +119,19 @@ export function AppShell() {
             <button onClick={() => setKeys(true)} className="hidden items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted md:flex" aria-label="Keyboard shortcuts">
               <Keyboard className="size-4" />Shortcuts
             </button>
+            <Button variant={mode === "demo" ? "secondary" : "ghost"} size="sm" onClick={() => setMode(mode === "live" ? "demo" : "live")}>
+              {mode === "live" ? "Demo data" : "Exit demo"}
+            </Button>
             <button onClick={toggleTheme} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted" aria-label="Switch light or dark mode">
               {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
               <span>{theme === "dark" ? "Light" : "Dark"}</span>
             </button>
           </div>
         </header>
-        <main className="min-w-0 flex-1 px-4 pb-24 pt-6 md:px-8 md:pb-10 md:pt-8"><Outlet /></main>
+        <main className="min-w-0 flex-1 px-4 pb-24 pt-6 md:px-8 md:pb-10 md:pt-8">
+          {mode === "demo" && <p className="mb-4 rounded-md border border-warn/40 bg-warn/15 px-4 py-2 text-sm font-medium" role="status">Demo mode · synthetic reports</p>}
+          <Outlet />
+        </main>
       </div>
 
       <nav className="mobile-nav fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t bg-sidebar text-sidebar-foreground md:hidden" aria-label="Main">

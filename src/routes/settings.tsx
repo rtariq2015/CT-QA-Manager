@@ -80,6 +80,7 @@ function Settings() {
       if (b.settings && typeof b.settings === "object" && Array.isArray((b.settings as Config).sources)) {
         const next = normalizeConfig(b.settings);
         setCfg(next); localStorage.setItem(KEY, JSON.stringify(next));
+        window.dispatchEvent(new Event("ctqa:settings"));
       }
       toast.success(`Restored ${Object.keys(b.filings).length} filing decisions`);
     } catch (e) { toast.error((e as Error).message); }
@@ -186,15 +187,27 @@ function Settings() {
         </TabsContent>
         <TabsContent value="usb">
           <section className="rounded-lg border bg-card p-4 text-sm">
-            <h2 className="mb-1 font-medium">Carry the program on a USB stick</h2>
-            <ol className="mb-3 list-decimal space-y-1 pl-5 text-muted-foreground">
-              <li>Download the package and unzip it onto your USB stick (or Desktop).</li>
-              <li>Put scanner PDFs in the <b className="text-foreground">Reports</b> folder (one sub-folder per scanner is ready).</li>
-              <li>On any PC, double-click <b className="text-foreground">Start CT QA.bat</b>. No install, no admin.</li>
-              <li>In the app, go to Folders → Open folder and pick the USB's Reports folder.</li>
-            </ol>
-            <Button onClick={async () => { const zip = await buildUsbPackage(cfg, window.location.origin); const url = URL.createObjectURL(new Blob([zip as BlobPart], { type: "application/zip" })); const a = document.createElement("a"); a.href = url; a.download = "CTQA-USB.zip"; a.click(); URL.revokeObjectURL(url); log("success", "settings", "USB package downloaded"); }}>Download USB package</Button>
-            <p className="mt-3 text-xs text-muted-foreground">The launcher opens this app in the PC's browser; PDFs on the USB are still read only on that PC and never uploaded.</p>
+            {isDesktop ? (
+              <>
+                <h2 className="mb-1 font-medium">Carry the Windows program on a USB stick</h2>
+                <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
+                  <li>Copy the entire extracted CT QA Manager program folder onto the USB stick.</li>
+                  <li>On the Windows PC, open the copied folder and double-click <b className="text-foreground">CT QA Manager.exe</b>.</li>
+                  <li>Click Open folder and select the folder containing your scanner PDFs.</li>
+                </ol>
+              </>
+            ) : (
+              <>
+                <h2 className="mb-1 font-medium">USB report folders and web shortcut</h2>
+                <ol className="mb-3 list-decimal space-y-1 pl-5 text-muted-foreground">
+                  <li>Download the ZIP and extract its contents onto the USB stick.</li>
+                  <li>Put scanner PDFs in the <b className="text-foreground">Reports</b> folder.</li>
+                  <li>On a Windows PC with access to this site, double-click <b className="text-foreground">Start CT QA.bat</b>.</li>
+                  <li>Click Open folder and select the USB's Reports folder.</li>
+                </ol>
+                <Button onClick={async () => { const zip = await buildUsbPackage(cfg, window.location.origin); const url = URL.createObjectURL(new Blob([zip as BlobPart], { type: "application/zip" })); const a = document.createElement("a"); a.href = url; a.download = "CTQA-USB.zip"; a.click(); URL.revokeObjectURL(url); log("success", "settings", "USB package downloaded"); }}>Download USB folders and shortcut</Button>
+              </>
+            )}
           </section>
         </TabsContent>
       </Tabs>

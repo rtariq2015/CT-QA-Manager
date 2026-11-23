@@ -3,7 +3,6 @@ import { desktop } from "@/lib/qa-desktop";
 import { normalizeConfig, SETTINGS_KEY, kindOf } from "@/lib/qa-settings";
 import { toast } from "sonner";
 import { useQa } from "@/lib/qa-store";
-import { folderParts, tidyFileName } from "@/lib/qa-library";
 import { log, markFolderOpened, setConnection } from "@/lib/qa-logger";
 
 type DirHandle = { kind: "directory"; name: string; values(): AsyncIterable<DirHandle | FileHandle>; getDirectoryHandle(n: string, o?: { create: boolean }): Promise<DirHandle>; getFileHandle(n: string, o?: { create: boolean }): Promise<FileHandle> };
@@ -30,22 +29,21 @@ export function useFolderReader(onDone?: () => void, autoConnect = false) {
   const [busy, setBusy] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
 
-  async function readFiles(files: AsyncIterable<File> | File[], folder: string, kind: "local" | "network" = "local") {
-    const { readQaPdf } = await import("@/lib/qa-pdf");
+  async function readFiles(files: AsyncIterable<File> | File[], folder: string, kind: "local" | "network" = "local", showLive = true) {
+    const { importQaPdf } = await import("@/lib/qa-pdf");
     const list: File[] = []; for await (const f of files) list.push(f);
-    log("info", "folder", `Opened folder "${folder}" (local): ${list.length} PDFs found`);
-    setConnection({ state: "reading", kind: "local", folder, done: 0, total: list.length, failed: 0, at: new Date().toISOString() });
-    let ok = 0, bad = 0, saved = 0;
+    log("info", "folder", `Opened folder "${folder}" (${kind}): ${list.length} PDFs found`);
+    setConnection({ state: "reading", kind, folder, done: 0, total: list.length, failed: 0, at: new Date().toISOString() });
+    let ok = 0, bad = 0, saved = 0, unsaved = 0;
     const d = desktop();
     for (const file of list) {
       setBusy(`Reading ${file.name}…`);
-      try { const rep = await readQaPdf(file); rep.originalUrl = URL.createObjectURL(file); addReport(rep); ok++;
-        if (d) {
-          const res = await d.saveCopy([...folderParts(rep), tidyFileName(rep)].join("/"), new Uint8Array(await file.arrayBuffer()));
-          if (res.ok) { if (!res.existed) saved++; } else log("error", "folder", `Could not save a copy of ${file.name}: ${res.error ?? "unknown"}`);
-        }
-      }
-      catch { bad++; }
+      try {
+        const result = await importQaPdf(file, report => addReport(report, showLive));
+        ok++;
+        if (result.saved) saved++;
+        if (result.archiveError) unsaved++;
+      } catch { bad++; }
       setConnection({ done: ok + bad, failed: bad });
     }
     setConnection({ state: "ready" });
@@ -53,21 +51,25 @@ export function useFolderReader(onDone?: () => void, autoConnect = false) {
     markFolderOpened(folder, kind, ok);
     log(bad ? "warning" : "success", "folder", `Finished "${folder}": ${ok} read, ${bad} could not be read`);
     setBusy(null);
-    toast.success(`${ok} reports organized${d ? ` · ${saved} new PDFs saved to QA Library` : ""}${bad ? ` · ${bad} could not be read` : ""}`);
+    const message = `${ok} reports read${d ? ` · ${saved} new PDFs saved to QA Library` : ""}${bad ? ` · ${bad} could not be read` : ""}${unsaved ? ` · ${unsaved} copies could not be saved` : ""}`;
+    if (bad || unsaved) toast.warning(message);
+    else toast.success(message);
     onDone?.();
   }
 
   /** Desktop program only: connect every configured scanner folder with its saved login. */
   async function connectAll() {
     const d = desktop(); if (!d) return;
-    let cfg; try { cfg = normalizeConfig(JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "null") as unknown); } catch { return; }
+    const saved = localStorage.getItem(SETTINGS_KEY);
+    if (!saved) return;
+    let cfg; try { cfg = normalizeConfig(JSON.parse(saved) as unknown); } catch { return; }
     for (const s of cfg.sources) {
       if (!s.path || s.path === "\\\\") continue;
       setBusy(`Connecting ${s.name}…`);
       const res = await d.readFolder({ ...s, kind: kindOf(s) });
       if (!res.ok) { log("error", "folder", res.error ?? `Could not connect ${s.name}`); toast.error(res.error ?? `Could not connect ${s.name}`); continue; }
       const files = res.files.map((f) => new File([f.data as BlobPart], f.name, { type: "application/pdf" }));
-      await readFiles(files, s.path.split(/[\\/]/).filter(Boolean).pop() ?? s.name, kindOf(s));
+      await readFiles(files, s.path.split(/[\\/]/).filter(Boolean).pop() ?? s.name, kindOf(s), false);
     }
     setBusy(null);
   }

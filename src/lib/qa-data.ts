@@ -61,6 +61,7 @@ export interface Report {
   printedSections?: { label: string; status: "OK" | "NOT OK" | "Not available"; page: number }[];
   software?: string;
   extractionNotes?: string[];
+  extractionIncomplete?: boolean;
   originalUrl?: string;
 }
 
@@ -104,6 +105,18 @@ export function addDays(iso: string, n: number): string {
   const d = new Date(iso + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
+}
+
+export function localDate(when = new Date()): string {
+  const year = when.getFullYear();
+  const month = String(when.getMonth() + 1).padStart(2, "0");
+  const day = String(when.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function isScheduledQaDay(iso: string, days: "every" | "weekdays"): boolean {
+  const day = new Date(iso + "T00:00:00Z").getUTCDay();
+  return days === "every" || (day >= 1 && day <= 5);
 }
 
 const round = (v: number, d = 1) => Math.round(v * 10 ** d) / 10 ** d;
@@ -244,8 +257,6 @@ export const MONTHLY_CHECKLIST: { metric: MetricId; label: string }[] = [
   { metric: "externalmarker", label: "External light marker" },
   { metric: "contrast", label: "Contrast scale" },
 ];
-export const MONTHLY_DUE_DAY = 10;
-
 // Which monthly checklist tests were found in a scanner's filed Monthly reports for a month.
 export function monthlyCoverage(reports: Report[], scanner: ScannerId, month: string) {
   const mine = reports.filter((r) => r.scanner === scanner && r.date.startsWith(month) && r.type === "Monthly");

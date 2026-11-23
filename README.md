@@ -1,90 +1,44 @@
-# CT QA Manager 5.8.0
+# CT QA Manager
 
-A CT quality-assurance companion for a hospital Siemens fleet: it reads the scanner's QA PDF
-reports, files them as **Daily / Monthly / Other**, flags anything that needs a person, and can run
-completely offline as a Windows program.
+**An offline Windows workspace for Siemens CT quality assurance.** Open scanner QA PDFs, track daily receipt and monthly checks, and file reports into a local QA Library.
 
-This is the modern companion to [CT QA Manager Pro](https://github.com/rtariq2015/QA-Manger), the
-offline PowerShell program. Record shapes and filing logic mirror the original so work can be
-ported back.
+[**Download for Windows x64**](https://github.com/rtariq2015/CT-QA-Manager/releases/latest/download/CT-QA-Manager-Windows-x64.zip) · [Release notes](https://github.com/rtariq2015/CT-QA-Manager/releases/latest) · [CT QA Manager Pro](https://github.com/rtariq2015/QA-Manger)
 
-**Release:** <https://github.com/rtariq2015/radiology-qa-insight/releases/tag/v5.8.0>
+![CT QA Manager dashboard showing synthetic demo data](docs/images/today-demo.png)
 
-## What it does
+## Start on Windows
 
-### Reads the actual PDFs
-- Mozilla PDF.js plus a purpose-built Siemens parser. Everything stays on the machine — no PDF is
-  ever uploaded anywhere.
-- Handles the older syngo VB reports and the syngo VA40A reports (X.cite).
-- Pulls out scanner identity, serial, date, printed sections with OK / NOT OK, per-slice tables with
-  tube A/B, kV, kernel, reference and printed limits, MTF and contrast scale.
-- Printed exceptions are never overwritten by a guess. Unreadable or partial reports are flagged,
-  not silently classified.
+1. Download the Windows ZIP and extract the full folder to a writable location.
+2. Double-click **CT QA Manager.exe**. The app opens in its own window.
+3. Choose **Open folder** for local PDFs, or save scanner locations under **Settings**. Network shares require access to the network that hosts them.
 
-### Files reports by itself
-- Clean routine reports are filed automatically as Daily / Monthly / Other.
-- Only these stop for a person: a printed NOT OK, a reading outside its printed limit, an
-  unrecognized scanner, or an incomplete extraction.
-- The Needs attention page shows **why** a report stopped and **what to do** next.
-- Suggests Daily for a two-section IEC Constancy summary only when the printed tests are exactly
-  noise and homogeneity / water. Filenames and archive folders are never used to classify.
+Use **Saved PDFs** to open the **QA Library** next to the program. Keep the full program folder together when copying to another computer or USB drive. Before upgrading, keep a copy of your QA Library and export a settings and filing backup.
 
-### Folders and exports
-- Organized folder view: QA Library → scanner → year → month → Daily / Monthly / Other, with
-  breadcrumb navigation and per-folder PDF counts.
-- Exports page builds a ZIP of PDFs plus CSV and HTML summary, with filters.
-- Saved copies use tidy names such as `CT_EXCITE_QA_11-23-2026.pdf`. Original files are never
-  renamed or moved, and the CSV keeps the original name.
-- Export waits until every PDF is read and says how many are included, so nothing is left out.
+## Workspaces
 
-### Scanner folders
-- Each scanner points at a network share or a local / Desktop / USB folder, switched with one
-  toggle.
-- `Settings.json` download for the Windows program.
-- Top-bar lights show which scanner folders are actually connected.
+| Workspace | What you can do |
+| --- | --- |
+| **Today** | Check Daily QA receipt, pending reviews, printed exceptions, and monthly deadlines. |
+| **Reports** | Search imported reports, open the source PDF, and check receipt on the calendar. |
+| **Review** | Check unreadable or flagged results, file as Daily, Monthly, or Other, and undo a filing. |
+| **Monthly and Trends** | View the monthly checklist and chart supported readings against the printed limits. |
+| **Folders and Exports** | Browse the organized library and export PDFs with a CSV and HTML summary. |
+| **Settings** | Configure scanner folders and the QA schedule, or back up settings and filing decisions. |
 
-### Offline Windows desktop program
-- Runs on the local machine with no internet and no browser tab.
-- Network passwords are stored with Windows' own encryption on that computer — never in
-  `Settings.json`, a backup, or browser storage.
-- Connects to configured scanner folders by itself on start-up.
-- Saves a copy of every real PDF into a **QA Library** folder next to the program, sorted by
-  scanner / year / month / type; a **Saved PDFs** button opens it in Windows Explorer.
-- Duplicates are skipped, so re-opening a folder does not create doubles.
+## How reports are handled
 
-### Other
-- Live activity log with filters, pause, download as text, and a diagnostic file. The log holds no
-  PDF contents, passwords or patient data.
-- Light and dark mode, print view, keyboard shortcuts, help page.
-- Filing state survives a refresh.
-- Backup / restore of filing decisions and settings only — never PDFs or passwords.
+The parser supports older Siemens syngo VB PDFs and syngo VA40A reports, including SOMATOM Drive, Flash, Edge, and X.cite. It retains printed results and supported readings with their printed tolerances. Incomplete extractions and exceptions stay visible for review. Filing is a document classification step and leaves the scanner’s printed result intact.
 
-## Scanner fleet
+The desktop app works offline with local PDFs. Windows protects saved network credentials, and backups include filing decisions and settings. Live mode starts with your imported reports. Choose **Demo data** to explore synthetic examples.
 
-SOMATOM Drive, SOMATOM Flash, SOMATOM Edge, SOMATOM X.cite. X.cite reports come from two units
-(serials 123193 and 124068) and use the syngo VA40A layout.
+## Build from source
 
-## Running it
-
-### Web preview
 ```sh
 npm install
+npm test
 npm run dev
-npm test        # 60 tests
 npm run build
+npm run package:windows
 ```
 
-### Offline Windows program
-```sh
-VITE_DESKTOP=1 npm run build
-npx electron-packager . "CT QA Manager" --platform=win32 --arch=x64 --out=release --no-asar --overwrite
-```
-The desktop build emits a static SPA (`base: './'`, hash routing). Electron serves `dist/client`
-over a loopback HTTP server because Chromium blocks ES modules over `file://`.
-
-## Things to know
-- The web version cannot crawl a network drive on its own; a browser must be shown the folder. The
-  desktop program does not have that limit.
-- Google Fonts fall back to system fonts when offline (cosmetic only).
-- Demo data is generated deterministically from `src/lib/qa-data.ts` with a fixed date, so the
-  server and browser renders match.
+The package command creates `electron-release/CT QA Manager-win32-x64`. The desktop renderer uses a stable local address for settings and filing decisions across restarts. The web build processes PDFs locally after you select a folder or files using the browser.

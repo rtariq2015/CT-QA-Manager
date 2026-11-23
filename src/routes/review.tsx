@@ -2,7 +2,7 @@ import { tidyFileName } from "@/lib/qa-library";
 import { Button } from "@/components/ui/button";
 import { createFileRoute } from "@tanstack/react-router";
 import { Undo2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ReportType } from "@/lib/qa-data";
 import { useQa } from "@/lib/qa-store";
@@ -30,17 +30,32 @@ const CHOICES: { type: ReportType; key: string }[] = [
 ];
 
 function Review() {
-  const { pending, file, undo, lastFiling } = useQa();
+  const { pending, file, undo, filingBusy, lastFiling } = useQa();
   const [currentId, setCurrentId] = useState<string | undefined>(undefined);
   const current = pending.find((r) => r.id === currentId) ?? pending[0];
 
-  const doFile = (type: ReportType) => {
-    if (!current) return;
+  const undoRef = useRef(undo);
+  useEffect(() => { undoRef.current = undo; }, [undo]);
+  const undoFiling = async () => {
+    try {
+      const filing = await undoRef.current();
+      if (filing) setCurrentId(filing.id);
+    } catch (error) {
+      toast.error("Could not undo filing", { description: String(error) });
+    }
+  };
+
+  const doFile = async (type: ReportType) => {
+    if (!current || filingBusy) return;
     const idx = pending.indexOf(current);
     const next = pending[idx + 1] ?? pending[idx - 1];
-    file(current.id, type);
-    setCurrentId(next?.id);
-    toast.success(`Filed as ${type}`, { description: current.fileName, action: { label: "Undo", onClick: () => { const u = undo(); if (u) setCurrentId(u.id); } } });
+    try {
+      if (!await file(current.id, type)) return;
+      setCurrentId(next?.id);
+      toast.success(`Filed as ${type}`, { description: current.fileName, action: { label: "Undo", onClick: () => void undoFiling() } });
+    } catch (error) {
+      toast.error("Could not file this PDF", { description: String(error) });
+    }
   };
 
   useEffect(() => {
@@ -48,8 +63,8 @@ function Review() {
       if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey) return;
       const k = e.key.toUpperCase();
       const c = CHOICES.find((x) => x.key === k);
-      if (c) { e.preventDefault(); doFile(c.type); }
-      if (k === "Z") { const u = undo(); if (u) setCurrentId(u.id); }
+      if (c) { e.preventDefault(); void doFile(c.type); }
+      if (k === "Z") void undoFiling();
       if (k === "J" || k === "K") {
         const i = current ? pending.indexOf(current) : 0;
         const n = pending[k === "J" ? i + 1 : i - 1];
@@ -65,7 +80,7 @@ function Review() {
       <div className="mx-auto max-w-3xl">
         <PageHeader eyebrow="Review" title="All caught up" />
         <p className="text-lg text-muted-foreground">Every report is filed. New reports that can't be filed automatically will appear here.</p>
-        {lastFiling && <Button variant="outline" onClick={() => undo()} className="mt-4 inline-flex items-center gap-2 rounded-md border px-4 py-2 hover:bg-muted"><Undo2 className="size-4" />Undo last filing</Button>}
+        {lastFiling && <Button variant="outline" disabled={filingBusy} onClick={() => void undoFiling()} className="mt-4 inline-flex items-center gap-2 rounded-md border px-4 py-2 hover:bg-muted"><Undo2 className="size-4" />Undo last filing</Button>}
       </div>
     );
   }
@@ -73,7 +88,7 @@ function Review() {
   return (
     <div className="mx-auto max-w-7xl">
       <PageHeader eyebrow={`Review · ${pending.length} left`} title="Needs attention">
-        <p className="text-sm text-muted-foreground">Clean Daily and Monthly reports are filed automatically; unreadable ones go to Other. Only reports that need a person appear here.</p>
+        <p className="text-sm text-muted-foreground">Clean Daily and Monthly reports are filed automatically. Reports with unreadable results or other exceptions appear here for review.</p>
         
       </PageHeader>
       <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
@@ -88,10 +103,10 @@ function Review() {
               <span className="text-sm text-muted-foreground">Suggested:</span>
               <Pill tone={current.confidence === "uncertain" ? "warn" : "muted"}>{current.suggested} · {current.confidence}</Pill>
             </div>
-            <p className="mt-4 text-sm font-medium">Then file it as</p>
+            <p className="mt-4 text-sm font-medium">{filingBusy ? "Updating QA Library…" : "File as"}</p>
             <div className="mt-2 grid gap-2">
               {CHOICES.map((c) => (
-                <Button variant="outline" key={c.type} onClick={() => doFile(c.type)}
+                <Button variant="outline" key={c.type} disabled={filingBusy} onClick={() => void doFile(c.type)}
                   className={cn("flex items-center justify-between rounded-md border px-4 py-3 text-left text-lg font-medium transition-colors hover:bg-accent",
                     c.type === current.suggested && "border-primary bg-primary/8")}>
                   {c.type}<Kbd>{c.key}</Kbd>

@@ -1,17 +1,21 @@
 // Electron main process (CommonJS: the project's package.json sets "type": "module",
 // so a .js file here would have no __dirname).
 //
-// The offline build is an ES-module SPA (Vite). Chromium refuses to load ES modules over the
-// file:// protocol (CORS "origin 'null'"), so instead of win.loadFile() we serve the built
-// client folder over a local loopback HTTP server and load that. Everything still runs on the
-// local machine with no internet: the server only listens on 127.0.0.1.
-const { app, BrowserWindow, shell, ipcMain, safeStorage } = require("electron");
+// The desktop build uses a local protocol so Chromium can load ES modules and keep the
+// same storage origin for scanner settings and filing decisions across launches.
+const { app, BrowserWindow, dialog, shell, ipcMain, protocol, safeStorage } = require("electron");
 const { execFile } = require("child_process");
 const path = require("path");
 const fs = require("fs");
-const http = require("http");
 
 const CLIENT_DIR = path.join(__dirname, "..", "dist", "client");
+const APP_SCHEME = "ctqa";
+const APP_HOST = "app";
+const APP_URL = `${APP_SCHEME}://${APP_HOST}/`;
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
+]);
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -33,54 +37,33 @@ const MIME = {
   ".map": "application/json; charset=utf-8",
 };
 
-function send(res, code, body, headers) {
-  res.writeHead(code, headers);
-  res.end(body);
+async function serveApp(request) {
+  let pathname;
+  try {
+    const url = new URL(request.url);
+    if (url.host !== APP_HOST) return new Response("Not found", { status: 404 });
+    pathname = decodeURIComponent(url.pathname);
+  } catch {
+    return new Response("Bad request", { status: 400 });
+  }
+
+  if (pathname === "/") pathname = "/index.html";
+  const file = path.resolve(CLIENT_DIR, `.${pathname}`);
+  const relative = path.relative(CLIENT_DIR, file);
+  if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    return new Response("Forbidden", { status: 403 });
+  }
+
+  try {
+    const body = await fs.promises.readFile(file);
+    const contentType = MIME[path.extname(file).toLowerCase()] || "application/octet-stream";
+    return new Response(body, { headers: { "content-type": contentType } });
+  } catch {
+    return new Response("Not found", { status: 404 });
+  }
 }
 
-function serveFile(res, filePath) {
-  fs.readFile(filePath, (err, data) => {
-    if (err) return send(res, 404, "Not found", { "content-type": "text/plain" });
-    const ext = path.extname(filePath).toLowerCase();
-    send(res, 200, data, {
-      "content-type": MIME[ext] || "application/octet-stream",
-      "cache-control": "no-cache",
-    });
-  });
-}
-
-function startServer() {
-  const server = http.createServer((req, res) => {
-    let pathname;
-    try {
-      pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
-    } catch {
-      return send(res, 400, "Bad request", { "content-type": "text/plain" });
-    }
-    if (pathname === "/" || pathname === "") pathname = "/index.html";
-
-    // Resolve inside CLIENT_DIR only; reject path traversal.
-    const resolved = path.normalize(path.join(CLIENT_DIR, pathname));
-    if (!resolved.startsWith(CLIENT_DIR)) {
-      return send(res, 403, "Forbidden", { "content-type": "text/plain" });
-    }
-
-    fs.stat(resolved, (err, stat) => {
-      if (!err && stat.isDirectory()) return serveFile(res, path.join(resolved, "index.html"));
-      if (!err) return serveFile(res, resolved);
-      // SPA fallback: unknown path -> index.html (hash history keeps routes in the hash).
-      serveFile(res, path.join(CLIENT_DIR, "index.html"));
-    });
-  });
-  // Ephemeral port on loopback only.
-  server.listen(0, "127.0.0.1", () => {
-    const port = server.address().port;
-    createWindow(`http://127.0.0.1:${port}/`);
-  });
-  return server;
-}
-
-function createWindow(url) {
+function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
     height: 860,
@@ -99,12 +82,30 @@ function createWindow(url) {
 
   // Open external links (help, docs) in the system browser, never inside the app window.
   win.webContents.setWindowOpenHandler(({ url: u }) => {
-    if (u.startsWith("http")) shell.openExternal(u);
+    if (u.startsWith("https://") || u.startsWith("http://")) void shell.openExternal(u);
     return { action: "deny" };
   });
+  win.webContents.on("will-navigate", (event, targetUrl) => {
+    event.preventDefault();
+    // Links in the prerendered HTML use paths. In the desktop app those routes belong in the hash.
+    if (targetUrl.startsWith(APP_URL)) {
+      const target = new URL(targetUrl);
+      void win.loadURL(`${APP_URL}#${target.pathname}${target.search}${target.hash}`);
+    }
+  });
 
-  win.loadURL(url);
+  void win.loadURL(`${APP_URL}#/`);
   return win;
+}
+
+function handleAppMessage(channel, handler) {
+  ipcMain.handle(channel, (event, ...args) => {
+    const frame = event.senderFrame;
+    if (!frame || frame !== event.sender.mainFrame || !frame.url.startsWith(APP_URL)) {
+      throw new Error("Desktop actions are only available in the app window");
+    }
+    return handler(event, ...args);
+  });
 }
 
 // ---- Network logins: encrypted with Windows (DPAPI via safeStorage), never stored in plain text.
@@ -115,21 +116,21 @@ function getLogin(name) {
   if (!l) return null;
   try { return { user: l.user, password: safeStorage.decryptString(Buffer.from(l.pass, "base64")) }; } catch { return null; }
 }
-ipcMain.handle("ctqa:saveLogin", (_e, name, user, password) => {
+handleAppMessage("ctqa:saveLogin", (_e, name, user, password) => {
   if (!safeStorage.isEncryptionAvailable()) throw new Error("Windows encryption is not available");
   const all = readLogins();
   all[name] = { user: String(user || ""), pass: safeStorage.encryptString(String(password || "")).toString("base64") };
   fs.writeFileSync(loginFile(), JSON.stringify(all));
   return true;
 });
-ipcMain.handle("ctqa:renameLogin", (_e, from, to) => {
+handleAppMessage("ctqa:renameLogin", (_e, from, to) => {
   const all = readLogins();
   if (!all[from] || from === to || all[to]) return false;
   all[to] = all[from]; delete all[from];
   fs.writeFileSync(loginFile(), JSON.stringify(all));
   return true;
 });
-ipcMain.handle("ctqa:hasLogin", (_e, name) => !!readLogins()[name]);
+handleAppMessage("ctqa:hasLogin", (_e, name) => !!readLogins()[name]);
 
 function shareRoot(p) { const m = /^(\\\\[^\\]+\\[^\\]+)/.exec(p); return m ? m[1] : null; }
 function netUse(root, login) {
@@ -150,7 +151,7 @@ function walkPdfs(dir, out = []) {
   }
   return out;
 }
-ipcMain.handle("ctqa:readFolder", async (_e, source) => {
+handleAppMessage("ctqa:readFolder", async (_e, source) => {
   const p = String(source.path || "");
   let login = null;
   if (source.kind === "network") {
@@ -170,44 +171,81 @@ ipcMain.handle("ctqa:readFolder", async (_e, source) => {
 const libraryRoot = () => app.isPackaged
   ? path.join(path.dirname(process.execPath), "QA Library")
   : path.join(app.getPath("userData"), "QA Library");
-const safePart = (x) => String(x).replace(/[<>:"|?*\\/]/g, "_").replace(/^\.+/, "_").trim() || "_";
-ipcMain.handle("ctqa:saveCopy", (_e, rel, data) => {
-  try {
-    const parts = String(rel).split("/").map(safePart);
-    const dir = path.join(libraryRoot(), ...parts.slice(0, -1));
-    fs.mkdirSync(dir, { recursive: true });
-    const buf = Buffer.from(data);
-    const name = parts[parts.length - 1];
-    let target = path.join(dir, name), n = 2;
-    while (fs.existsSync(target)) {
-      if (fs.statSync(target).size === buf.length) return { ok: true, path: target, existed: true };
-      target = path.join(dir, name.replace(/\.pdf$/i, `_${n++}.pdf`));
+const safePart = (x) => String(x).trim().replace(/[<>:"|?*\\/]/g, "_").replace(/^\.+/, "_").trim() || "_";
+function archivePath(rel) {
+  return path.join(libraryRoot(), ...rel.split("/").map(safePart));
+}
+
+function checkArchiveDirectory(dir) {
+  const relative = path.relative(fs.realpathSync(libraryRoot()), fs.realpathSync(dir));
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error("Archive folder leaves the QA Library");
+  }
+}
+
+function removePreviousCopies(previous, bytes) {
+  for (const relative of previous) {
+    const { dir, name, base } = path.parse(archivePath(relative));
+    if (!fs.existsSync(dir)) continue;
+    checkArchiveDirectory(dir);
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const suffix = entry.name.slice(name.length);
+      if (!entry.isFile() || (entry.name !== base &&
+          (!entry.name.startsWith(name) || !/^_\d+\.pdf$/i.test(suffix)))) continue;
+      const file = path.join(dir, entry.name);
+      if (fs.statSync(file).size === bytes.length && fs.readFileSync(file).equals(bytes)) {
+        fs.unlinkSync(file);
+      }
     }
-    fs.writeFileSync(target, buf);
+  }
+}
+
+handleAppMessage("ctqa:saveCopy", (_e, rel, data, previous = []) => {
+  try {
+    const destination = archivePath(rel);
+    const { dir, name: stem, ext } = path.parse(destination);
+    const alternatives = previous.filter((item) => path.dirname(archivePath(item)) !== dir);
+    fs.mkdirSync(dir, { recursive: true });
+    checkArchiveDirectory(dir);
+    const buf = Buffer.from(data);
+    let target = destination;
+    for (let suffix = 2; ; suffix++) {
+      try {
+        fs.writeFileSync(target, buf, { flag: "wx" });
+        break;
+      } catch (err) {
+        if (err.code !== "EEXIST") throw err;
+      }
+      const existing = fs.statSync(target);
+      if (existing.isFile() && existing.size === buf.length && fs.readFileSync(target).equals(buf)) {
+        removePreviousCopies(alternatives, buf);
+        return { ok: true, path: target, existed: true };
+      }
+      target = path.join(dir, `${stem}_${suffix}${ext}`);
+    }
+    removePreviousCopies(alternatives, buf);
     return { ok: true, path: target, existed: false };
   } catch (err) { return { ok: false, error: String(err && err.message || err) }; }
 });
-ipcMain.handle("ctqa:openLibrary", async () => {
+handleAppMessage("ctqa:openLibrary", async () => {
   fs.mkdirSync(libraryRoot(), { recursive: true });
   const err = await shell.openPath(libraryRoot());
   return { ok: !err, path: libraryRoot(), error: err || undefined };
 });
 
-let httpServer;
-
 app.whenReady().then(() => {
-  httpServer = startServer();
+  if (!fs.existsSync(path.join(CLIENT_DIR, "index.html"))) {
+    dialog.showErrorBox("CT QA Manager", "The desktop app files are missing. Rebuild the desktop app or re-extract the complete Windows package.");
+    app.quit();
+    return;
+  }
+  protocol.handle(APP_SCHEME, serveApp);
+  createWindow();
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      if (httpServer) {
-        const port = httpServer.address().port;
-        createWindow(`http://127.0.0.1:${port}/`);
-      }
-    }
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
 app.on("window-all-closed", () => {
-  if (httpServer) httpServer.close();
   if (process.platform !== "darwin") app.quit();
 });

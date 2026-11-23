@@ -2,13 +2,13 @@ import { tidyFileName } from "@/lib/qa-library";
 import { createFileRoute } from "@tanstack/react-router";
 import { Search, FileUp, LoaderCircle, ChevronLeft, ChevronRight, X, FileText } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { SCANNERS, TODAY, type Report, type ReportType, type ScannerId } from "@/lib/qa-data";
+import { SCANNERS, isScheduledQaDay, type Report, type ReportType, type ScannerId } from "@/lib/qa-data";
 import { useQa } from "@/lib/qa-store";
 import { PageHeader, Pill, ScannerDot, ScannerLabel, fmtDate } from "@/components/qa/ui";
 import { ReportPreview } from "@/components/qa/ReportPreview";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { readQaPdf } from "@/lib/qa-pdf";
+import { importQaPdf } from "@/lib/qa-pdf";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/reports")({
@@ -28,7 +28,7 @@ export const Route = createFileRoute("/reports")({
 const ROW = 52;
 
 function Reports() {
-  const { reports, addReport } = useQa();
+  const { mode, reports, addReport } = useQa();
   const picker = useRef<HTMLInputElement>(null);
   const [reading, setReading] = useState(false);
   const [importMessage, setImportMessage] = useState("");
@@ -39,9 +39,10 @@ function Reports() {
     let count = 0; const errors: string[] = [];
     for (const file of Array.from(files)) {
       try {
-        const report = await readQaPdf(file);
-        report.originalUrl = URL.createObjectURL(file);
-        addReport(report); setSelected(report); count++;
+        const { report, archiveError } = await importQaPdf(file, addReport);
+        setSelected(report);
+        count++;
+        if (archiveError) errors.push(`${file.name}: could not save to the QA Library (${archiveError})`);
       } catch (error) { errors.push(`${file.name}: ${error instanceof Error ? error.message : "Could not read this PDF"}`); }
     }
     setReading(false); setImportMessage(`${count} local PDF${count === 1 ? "" : "s"} read. ${errors.join(" ")}`);
@@ -71,7 +72,7 @@ function Reports() {
         <input ref={picker} type="file" multiple accept="application/pdf,.pdf" className="hidden" onChange={e => void importFiles(e.target.files)} aria-label="Open local PDFs" />
       </PageHeader>
       {importMessage && <p role="status" className="mb-4 break-words text-sm">{importMessage}</p>}
-      <Calendar reports={reports} scanner={scanner === "all" ? "flash" : scanner} onScanner={setScanner} onReport={setSelected} />
+      <Calendar key={mode} reports={reports} scanner={scanner === "all" ? "flash" : scanner} onScanner={setScanner} onReport={setSelected} />
 
       <details className="mt-6 border-t pt-4">
         <summary className="cursor-pointer text-sm font-medium">Search report library</summary>
@@ -122,13 +123,16 @@ function Reports() {
 }
 
 function Calendar({ reports, scanner, onScanner, onReport }: { reports: Report[]; scanner: ScannerId; onScanner: (s: ScannerId) => void; onReport: (report: Report) => void }) {
-  const [month, setMonth] = useState(TODAY.slice(0, 7));
+  const { today, schedule } = useQa();
+  const currentMonth = today.slice(0, 7);
+  const [monthPick, setMonth] = useState<string | null>(null);
+  const month = monthPick ?? currentMonth;
   const [day, setDay] = useState<string | null>(null);
   const [anchor, setAnchor] = useState<{ left: number; top: number; width: number; flip: boolean } | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const mine = useMemo(() => reports.filter((r) => r.scanner === scanner), [reports, scanner]);
-  const firstSeen = mine.at(-1)?.date ?? TODAY;
+  const firstSeen = mine.at(-1)?.date ?? today;
   const cells = useMemo(() => {
     const start = new Date(month + "-01T00:00:00Z");
     const lead = start.getUTCDay();
@@ -166,7 +170,7 @@ function Calendar({ reports, scanner, onScanner, onReport }: { reports: Report[]
     return () => document.removeEventListener("pointerdown", onDown);
   }, [day]);
   const dayReports = day ? mine.filter((r) => r.date === day) : [];
-  const counted = cells.filter((d): d is string => !!d && d <= TODAY && d >= firstSeen);
+  const counted = cells.filter((d): d is string => !!d && d <= today && d >= firstSeen && isScheduledQaDay(d, schedule.days));
   const got = counted.filter((d) => mine.some((r) => r.date === d && r.type === "Daily")).length;
   return (
     <section className="rounded-lg border bg-card p-4 sm:p-5">
@@ -174,7 +178,7 @@ function Calendar({ reports, scanner, onScanner, onReport }: { reports: Report[]
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" onClick={() => shift(-1)} aria-label="Previous month"><ChevronLeft /></Button>
           <h2 className="min-w-36 text-center text-lg font-semibold">{new Date(month + "-01T00:00:00Z").toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })}</h2>
-          <Button variant="outline" size="icon" onClick={() => shift(1)} disabled={month >= TODAY.slice(0, 7)} aria-label="Next month"><ChevronRight /></Button>
+          <Button variant="outline" size="icon" onClick={() => shift(1)} disabled={month >= currentMonth} aria-label="Next month"><ChevronRight /></Button>
         </div>
         <div className="flex flex-wrap gap-1">
           {SCANNERS.map((s) => (
@@ -194,14 +198,15 @@ function Calendar({ reports, scanner, onScanner, onReport }: { reports: Report[]
           const daily = rs.some((r) => r.type === "Daily");
           const monthly = rs.some((r) => r.type === "Monthly");
           const bad = rs.some((r) => r.printedStatus === "NOT OK");
-          const future = d > TODAY; const before = d < firstSeen;
-          const state = future || before ? "none" : bad ? "bad" : daily ? "ok" : "miss";
+          const future = d > today;
+          const expected = !future && d >= firstSeen && isScheduledQaDay(d, schedule.days);
+          const state = bad ? "bad" : daily ? "ok" : expected ? "miss" : "none";
           return (
-            <Button variant="ghost" key={d} data-day-cell aria-label={`${d}${bad ? ": NOT OK" : daily ? ": Daily received" : ": No Daily report"}`} disabled={future} onClick={(e) => open(d, e.currentTarget)} aria-pressed={d === day}
+            <Button variant="ghost" key={d} data-day-cell aria-label={`${d}${bad ? ": NOT OK" : daily ? ": Daily received" : expected ? ": No Daily report" : ""}`} disabled={future && !rs.length} onClick={(e) => open(d, e.currentTarget)} aria-pressed={d === day}
               className={cn("relative flex h-12 px-0 flex-col items-center justify-center rounded-md border text-sm sm:h-14",
                 state === "ok" && "border-ok/40 bg-ok/15", state === "bad" && "border-destructive/50 bg-destructive/15",
                 state === "miss" && "border-2 border-dashed border-warn", state === "none" && "border-transparent text-muted-foreground/50",
-                d === day && "ring-2 ring-primary", d === TODAY && "font-bold")}>
+                d === day && "ring-2 ring-primary", d === today && "font-bold")}>
               {Number(d.slice(8))}
               {monthly && <span className="absolute bottom-1 size-1.5 rounded-full bg-primary" />}
             </Button>

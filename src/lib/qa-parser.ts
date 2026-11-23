@@ -5,6 +5,9 @@ export interface PdfTextPage { page: number; lines: string[] }
 export type PrintedStatus = "OK" | "NOT OK" | "Not available";
 export interface PrintedSection { label: string; status: PrintedStatus; page: number }
 
+const sliceHeading = /^Slice (\d+)\b/;
+const tableBoundary = /^(?:Test:|\d+\.\s*Quality|Results for|Water Value Results|Common Parameters)/;
+
 const NUMBER = "[-+]?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?";
 const readings = new RegExp(`(${NUMBER})\\s*(HU|lp/cm|mm|mGy/100mAs|1/HUcm)(?:\\s*\\((${NUMBER})\\))?`, "g");
 const limits = new RegExp(`(${NUMBER})\\s*(?:\\.\\.\\.|…|\\.\\.)\\s*(${NUMBER})\\s*(HU|lp/cm|mm|mGy/100mAs|1/HUcm)`, "g");
@@ -23,6 +26,7 @@ export function parseSiemensPages(pages: PdfTextPage[], filename: string, sizeKb
     if (m?.[1] && m[2]) sections.push({ label: m[1].trim(), status: m[2].replace(/\s+/g, " ") as PrintedStatus, page: Number(m[3]) });
   }
   const measurements: Measurement[] = [];
+  let extractionIncomplete = false;
   let metric: MetricId | undefined;
   let mode = ""; let kv = 120; let kernel = ""; let referenceDate: string | undefined;
   let columns: { metric: MetricId; tube: "A" | "B"; position?: string }[] = [];
@@ -59,29 +63,59 @@ export function parseSiemensPages(pages: PdfTextPage[], filename: string, sizeKb
       if (/Water\s+CT Air\s+Contrast scale/.test(line)) {
         const tube = columns[0]?.tube ?? "A"; columns = [{ metric: "water", tube }, { metric: "air", tube }, { metric: "contrast", tube }];
       }
-      const slice = /^Slice (\d+)\b/.exec(line);
-      if (!slice?.[1] || !metric || columns.length === 0) continue;
+      if (!sliceHeading.test(line) || !metric || columns.length === 0) continue;
+      const rowStarts = [i];
       let end = i + 1;
-      while (end < lines.length && !/^(?:Slice \d+|Test:|\d+\. Quality|Results for|Water Value Results|Common Parameters)/.test(lines[end] ?? "")) end++;
-      const block = lines.slice(i, end).join(" ");
-      const ownLimits = [...block.matchAll(limits)];
-      const valueText = block.replace(limits, "");
-      const values = [...valueText.matchAll(readings)];
-      // A trailing common tolerance belongs to all preceding slices in this table.
-      const tableTail: string[] = [];
-      for (let j = end; j < lines.length; j++) {
-        const candidate = lines[j] ?? "";
-        if (/^(?:Test:|\d+\. Quality|Results for|Water Value Results)/.test(candidate)) break;
-        tableTail.push(candidate);
+      while (end < lines.length && !tableBoundary.test(lines[end] ?? "")) {
+        if (sliceHeading.test(lines[end] ?? "")) rowStarts.push(end);
+        end++;
       }
-      const common = [...tableTail.join(" ").matchAll(limits)];
-      const bands = ownLimits.length ? ownLimits : common;
-      values.forEach((v, c) => {
-        const col = columns[c]; const band = bands[c] ?? (columns.length === 1 ? bands[0] : undefined);
-        if (!col || !band || !v[1] || !v[2] || !band[1] || !band[2] || v[2] !== band[3]) return;
-        const context = `${kv} kV · ${mode || "Body mode"} · Tube ${col.tube} · Slice ${slice[1]}${col.position ? ` · ${col.position}` : ""}${kernel ? ` · ${kernel}` : ""}`;
-        measurements.push({ metric: col.metric, context, tube: col.tube, slice: Number(slice[1]), mode: mode || "Body mode", kv, kernel, value: Number(v[1]), unit: v[2], lower: Number(band[1]), upper: Number(band[2]), baseline: v[3] ? Number(v[3]) : null, page: p.page, limitSource: "printed", ...(referenceDate ? { referenceDate } : {}) });
+      const rows = rowStarts.map((start, index) => {
+        const rowLines = lines.slice(start, rowStarts[index + 1] ?? end);
+        const text = rowLines.join(" ");
+        return {
+          slice: sliceHeading.exec(rowLines[0] ?? "")?.[1],
+          lines: rowLines,
+          bands: [...text.matchAll(limits)],
+          values: [...text.replace(limits, "").matchAll(readings)],
+        };
       });
+      const lastRow = rows.at(-1);
+      let commonBands: RegExpMatchArray[] = [];
+      // A table-wide tolerance follows the last reading in a separate footer.
+      const footerIndex = lastRow?.lines.findIndex((s) => /^Tolerance\b/.test(s)) ?? -1;
+      if (lastRow && footerIndex > 0 && rows.slice(0, -1).every((r) => !r.bands.length && !r.lines.some((s) => /^Tolerance\b/.test(s)))) {
+        const beforeFooter = lastRow.lines.slice(0, footerIndex).join(" ");
+        const footer = lastRow.lines.slice(footerIndex).join(" ");
+        const footerBands = [...footer.matchAll(limits)];
+        if (footerBands.length === columns.length && ![...beforeFooter.matchAll(limits)].length && ![...footer.replace(limits, "").matchAll(readings)].length) {
+          commonBands = footerBands;
+        }
+      }
+      for (const row of rows) {
+        const bands = row.bands.length ? row.bands : commonBands;
+        if (!row.slice || row.values.length !== columns.length || bands.length !== columns.length) {
+          extractionIncomplete = true;
+          continue;
+        }
+        columns.forEach((col, index) => {
+          const v = row.values[index];
+          const band = bands[index];
+          if (!v?.[1] || !v[2] || !band?.[1] || !band[2] || v[2] !== band[3]) {
+            extractionIncomplete = true;
+            return;
+          }
+          const value = Number(v[1]);
+          const lower = Number(band[1]);
+          const upper = Number(band[2]);
+          if (![value, lower, upper].every(Number.isFinite) || lower > upper) {
+            extractionIncomplete = true;
+            return;
+          }
+          const context = `${kv} kV · ${mode || "Body mode"} · Tube ${col.tube} · Slice ${row.slice}${col.position ? ` · ${col.position}` : ""}${kernel ? ` · ${kernel}` : ""}`;
+          measurements.push({ metric: col.metric, context, tube: col.tube, slice: Number(row.slice), mode: mode || "Body mode", kv, kernel, value, unit: v[2], lower, upper, baseline: v[3] ? Number(v[3]) : null, page: p.page, limitSource: "printed", ...(referenceDate ? { referenceDate } : {}) });
+        });
+      }
       i = end - 1;
     }
   }
@@ -94,5 +128,5 @@ export function parseSiemensPages(pages: PdfTextPage[], filename: string, sizeKb
     && sections.some(s => s.label === "Noise")
     && sections.some(s => s.label === "Homogeneity" || s.label === "Homogeneity / Water");
   const suggested = /Quality (?:IEC )?Acceptance/.test(all) ? "Other" : /Quality Daily/.test(all) || dailyConstancy ? "Daily" : sections.length > 2 ? "Monthly" : "Other";
-  return { id: `local-${filename}-${stamp[1]}-${stamp[2]}`, scanner, date: stamp[1], time: stamp[2], fileName: filename, sizeKb, type: "Other", suggested, confidence: "uncertain", needsReview: true, measurements: unique, pages: pages.length, source: "uploaded", printedStatus, printedSections: sections, software: /Software Version\s+([^\n]+)/.exec(all)?.[1]?.trim() ?? "Not available", extractionNotes: ["Partial extraction: slice tables with explicit printed limits only. Check the original PDF for other tests.", ...(sections.length ? [] : ["Printed summary not available; no QA result inferred."]), ...(unique.length ? [] : ["No supported measurement tables found."])] };
+  return { id: `local-${filename}-${stamp[1]}-${stamp[2]}`, scanner, date: stamp[1], time: stamp[2], fileName: filename, sizeKb, type: "Other", suggested, confidence: "uncertain", needsReview: true, measurements: unique, pages: pages.length, source: "uploaded", printedStatus, printedSections: sections, software: /Software Version\s+([^\n]+)/.exec(all)?.[1]?.trim() ?? "Not available", extractionIncomplete, extractionNotes: ["Partial extraction: slice tables with explicit printed limits only. Check the original PDF for other tests.", ...(sections.length ? [] : ["Printed summary not available; no QA result inferred."]), ...(unique.length ? [] : ["No supported measurement tables found."]), ...(extractionIncomplete ? ["Some rows do not have readable measurements and matching printed limits."] : [])] };
 }

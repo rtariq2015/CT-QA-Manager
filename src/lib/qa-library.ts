@@ -1,4 +1,5 @@
-import { ALL_SCANNERS, type Report } from "./qa-data";
+import { desktop } from "./qa-desktop";
+import { ALL_SCANNERS, type Report, type ReportType } from "./qa-data";
 
 const MONTHS = ["01-January","02-February","03-March","04-April","05-May","06-June","07-July","08-August","09-September","10-October","11-November","12-December"];
 export const SCANNER_FOLDER = { xcite: "CT Xcite", flash: "CT Flash", edge: "CT Edge", drive: "MDP Building" } as const;
@@ -31,6 +32,27 @@ export function folderParts(r: Report): [string, string, string, string] {
   const scanner = SCANNER_FOLDER[r.scanner];
   const [y = "0000", m = "01"] = r.date.split("-");
   return [scanner, y, MONTHS[Number(m) - 1] ?? m, TYPE_FOLDER[r.type]];
+}
+
+const archiveTypes: ReportType[] = ["Daily", "Monthly", "Other"];
+
+export async function saveArchivedReport(report: Report, data?: Uint8Array) {
+  const bridge = desktop();
+  if (!bridge || report.source !== "uploaded" || (!data && !report.originalUrl)) return false;
+
+  const relativePath = (type: ReportType) => {
+    const filed = { ...report, type };
+    return [...folderParts(filed), tidyFileName(filed)].join("/");
+  };
+  if (!data) {
+    const pdf = await fetch(report.originalUrl!);
+    if (!pdf.ok) throw new Error("Could not reopen the local PDF");
+    data = new Uint8Array(await pdf.arrayBuffer());
+  }
+  const previous = archiveTypes.filter((type) => type !== report.type).map(relativePath);
+  const result = await bridge.saveCopy(relativePath(report.type), data, previous);
+  if (!result.ok) throw new Error(result.error ?? "Could not update the QA Library");
+  return !result.existed;
 }
 
 export interface TreeNode { name: string; count: number; notOk: number; children: Map<string, TreeNode> }

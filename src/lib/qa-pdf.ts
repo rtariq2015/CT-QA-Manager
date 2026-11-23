@@ -1,5 +1,26 @@
 import { parseSiemensPages, type PdfTextPage } from "./qa-parser";
 import { log } from "./qa-logger";
+import type { Report } from "./qa-data";
+import { desktop } from "./qa-desktop";
+import { saveArchivedReport } from "./qa-library";
+
+/** Import through the same filing and archive path for folders and individual PDFs. */
+export async function importQaPdf(file: File, addReport: (report: Report) => Report) {
+  const report = await readQaPdf(file);
+  report.originalUrl = URL.createObjectURL(file);
+  const bytes = desktop() ? new Uint8Array(await file.arrayBuffer()) : undefined;
+  const filed = addReport(report);
+  if (!bytes) return { report: filed, saved: false };
+
+  try {
+    const saved = await saveArchivedReport(filed, bytes);
+    return { report: filed, saved };
+  } catch (err) {
+    const archiveError = err instanceof Error ? err.message : String(err);
+    log("error", "folder", `Could not save a copy of ${file.name}: ${archiveError}`);
+    return { report: filed, saved: false, archiveError };
+  }
+}
 
 // Browser-only entry point: load PDF.js after a user selects a local file.
 export async function readQaPdf(file: File) {

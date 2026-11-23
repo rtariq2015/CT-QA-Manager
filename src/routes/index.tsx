@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, CircleDashed } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, CircleDashed, CalendarDays, FileCheck2, ClipboardList, type LucideIcon } from "lucide-react";
 import { useMemo, useState } from "react";
-import { MONTHLY_CHECKLIST, MONTHLY_DUE_DAY, SCANNERS, TODAY, isOutOfLimit, monthlyCoverage, monthlyWaiting, trendWarnings } from "@/lib/qa-data";
+import { MONTHLY_CHECKLIST, SCANNERS, addDays, isOutOfLimit, isScheduledQaDay, monthlyCoverage, monthlyWaiting, trendWarnings } from "@/lib/qa-data";
 import { useQa } from "@/lib/qa-store";
 import ctRoom from "@/assets/ct-scanner-room.jpg";
 import { Pill, ScannerDot, fmtDate, scanColor } from "@/components/qa/ui";
@@ -21,22 +21,22 @@ export const Route = createFileRoute("/")({
 });
 
 function Today() {
-  const { reports, pending } = useQa();
-  const month = TODAY.slice(0, 7);
+  const { reports, pending, today, schedule } = useQa();
+  const month = today.slice(0, 7);
+  const dailyExpected = isScheduledQaDay(today, schedule.days);
   const cards = useMemo(() => SCANNERS.map((s) => {
     const mine = reports.filter((r) => r.scanner === s.id);
-    const daily = mine.find((r) => r.date === TODAY && r.type === "Daily");
+    const daily = mine.find((r) => r.date === today && r.type === "Daily");
     const flagged = daily?.measurements.filter(isOutOfLimit) ?? [];
     const monthlies = mine.filter((r) => r.date.startsWith(month) && r.type === "Monthly");
     const found = new Set(monthlies.flatMap((r) => r.measurements.map((m) => m.metric)));
     const done = MONTHLY_CHECKLIST.filter((c) => found.has(c.metric)).length;
     const last7 = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(TODAY + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - (6 - i));
-      const iso = d.toISOString().slice(0, 10);
-      return { iso, ok: mine.some((r) => r.date === iso && r.type === "Daily") };
+      const iso = addDays(today, i - 6);
+      return { iso, ok: mine.some((r) => r.date === iso && r.type === "Daily"), expected: isScheduledQaDay(iso, schedule.days) };
     });
     return { s, daily, flagged, done, pending: pending.filter((p) => p.scanner === s.id).length, last7 };
-  }), [reports, pending, month]);
+  }), [reports, pending, month, today, schedule.days]);
 
   const monthly = useMemo(() => SCANNERS.map((s) => ({ s, ...monthlyCoverage(reports, s.id, month), waiting: monthlyWaiting(reports, s.id, month) })), [reports, month]);
 
@@ -44,10 +44,10 @@ function Today() {
   const [open, setOpen] = useState<string | null>(null);
   const [showAttn, setShowAttn] = useState(false);
   const [tab, setTab] = useState<"daily" | "monthly">("daily");
-  const dueIn = MONTHLY_DUE_DAY - Number(TODAY.slice(8, 10));
+  const dueIn = schedule.dueDay - Number(today.slice(8, 10));
   const notOk = reports.filter((r) => r.printedStatus === "NOT OK" && r.date.startsWith(month));
   const attention = [
-    ...cards.filter((c) => !c.daily).map((c) => ({ key: `miss-${c.s.id}`, tone: "warn" as const, text: `${c.s.name}: today's Daily QA not received`, to: "/reports" as const })),
+    ...cards.filter((c) => dailyExpected && !c.daily).map((c) => ({ key: `miss-${c.s.id}`, tone: "warn" as const, text: `${c.s.name}: today's Daily QA not received`, to: "/reports" as const })),
     ...cards.filter((c) => c.daily?.printedStatus === "NOT OK").map((c) => ({ key: `bad-${c.s.id}`, tone: "bad" as const, text: `${c.s.name}: today's report prints NOT OK`, to: "/reports" as const })),
     ...monthly.filter((m) => m.done < MONTHLY_CHECKLIST.length && dueIn <= 3).map((m) => ({
       key: `due-${m.s.id}`,
@@ -57,23 +57,21 @@ function Today() {
         : `${m.s.name}: monthly tests due in ${dueIn} day${dueIn === 1 ? "" : "s"}`,
       to: "/monthly" as const,
     })),
-    ...reports.filter((r) => r.source === "uploaded" && r.extractionNotes?.length).slice(0, 3).map((r) => ({ key: `ex-${r.id}`, tone: "warn" as const, text: `${r.fileName}: only partly readable — check by eye`, to: "/reports" as const })),
+    ...reports.filter((r) => r.source === "uploaded" && r.extractionIncomplete && r.needsReview).slice(0, 3).map((r) => ({ key: `ex-${r.id}`, tone: "warn" as const, text: `${r.fileName}: only partly readable — check by eye`, to: "/reports" as const })),
     ...SCANNERS.flatMap((s) => trendWarnings(reports, s.id).slice(0, 2).map((w) => ({ key: `trend-${s.id}-${w.metric}-${w.context}`, tone: "warn" as const, text: `${s.name}: ${w.label.toLowerCase()} (${w.context}) ${w.direction} 3 reports in a row — still within limits`, to: "/trends" as const }))),
   ];
 
   return (
     <div className="mx-auto max-w-6xl">
-      <section className="relative mb-6 overflow-hidden rounded-xl border bg-card">
-        <img src={ctRoom} alt="CT scanner in a scan room" width={1774} height={887} className="absolute inset-0 h-full w-full object-cover object-right" />
-        <div className="absolute inset-0 bg-gradient-to-r from-background via-background/85 to-background/10" />
-        <div className="relative flex min-h-44 flex-col justify-center gap-3 p-6 sm:min-h-52 sm:p-8">
-          <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">{fmtDate(TODAY)}</p>
-          <h1 className="max-w-md text-2xl font-semibold sm:text-3xl">{received} of {SCANNERS.length} Daily reports in</h1>
-          <div className="flex flex-wrap gap-2">
-            {SCANNERS.map((s) => <span key={s.id} className="inline-flex items-center gap-1.5 rounded-full border bg-background/80 px-3 py-1 text-sm"><ScannerDot id={s.id} />{s.name}</span>)}
-          </div>
+      <section className="relative mb-6 isolate overflow-hidden rounded-2xl bg-[#10263b] text-white shadow-sm">
+        <img src={ctRoom} alt="" width={1774} height={887} className="absolute inset-y-0 right-0 -z-20 h-full w-full object-cover object-right sm:w-3/5" />
+        <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[#10263b] from-30% via-[#10263b]/90 via-55% to-[#10263b]/15" />
+        <div className="flex min-h-44 flex-col justify-center gap-3 p-6 sm:min-h-56 sm:p-8">
+          <p className="flex items-center gap-2 text-sm font-medium text-sky-100"><CalendarDays className="size-4" />{fmtDate(today)}</p>
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">QA overview</h1>
+          <p className="text-base text-slate-200">{dailyExpected ? `${received} of ${SCANNERS.length} scanners have sent today’s Daily QA` : "No Daily QA scheduled today"}</p>
           {pending.length > 0 && (
-            <Link to="/review" className="inline-flex w-fit items-center gap-2 rounded-md bg-primary px-4 py-2.5 font-medium text-primary-foreground hover:bg-primary/90">
+            <Link to="/review" className="mt-1 inline-flex w-fit items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-[#10263b] hover:bg-sky-100">
               Review {pending.length} report{pending.length === 1 ? "" : "s"} <ArrowRight className="size-4" />
             </Link>
           )}
@@ -81,10 +79,10 @@ function Today() {
       </section>
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Summary label="Daily reports today" value={`${received}/${SCANNERS.length}`} />
-        <Summary label="Waiting to file" value={String(pending.length)} />
-        <Summary label="Printed NOT OK this month" value={String(notOk.length)} tone={notOk.length ? "bad" : undefined} />
-        <Summary label="Monthly due" value={dueIn >= 0 ? `in ${dueIn} days` : `day ${MONTHLY_DUE_DAY} passed`} />
+        <Summary label="Daily reports today" value={dailyExpected ? `${received}/${SCANNERS.length}` : String(received)} icon={FileCheck2} to="/reports" />
+        <Summary label="Waiting to file" value={String(pending.length)} icon={ClipboardList} to="/review" />
+        <Summary label="Printed NOT OK this month" value={String(notOk.length)} tone={notOk.length ? "bad" : undefined} icon={AlertTriangle} to="/reports" />
+        <Summary label="Monthly due" value={dueIn === 0 ? "Today" : dueIn > 0 ? `In ${dueIn} days` : `${-dueIn}d overdue`} icon={CalendarDays} to="/monthly" />
       </div>
 
       <section className="mb-6 rounded-lg border bg-card">
@@ -119,7 +117,7 @@ function Today() {
       {tab === "daily" && (
       <div className="grid gap-4 sm:grid-cols-2">
         {cards.map(({ s, daily, flagged, done, pending: p, last7 }) => (
-          <article key={s.id} className="relative overflow-hidden rounded-lg border bg-card p-5">
+          <article key={s.id} className="relative overflow-hidden rounded-xl border bg-card p-5 shadow-sm">
             <div className="absolute inset-y-0 left-0 w-1" style={{ background: scanColor[s.id] }} />
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -127,14 +125,14 @@ function Today() {
                 <p className="text-muted-foreground">{s.model} · {s.software}</p>
               </div>
               {daily ? (daily.printedStatus === "NOT OK" ? <Pill tone="bad"><AlertTriangle className="size-3.5" />Printed NOT OK · {flagged.length} readings</Pill> : <Pill tone="ok"><CheckCircle2 className="size-3.5" />Daily received</Pill>)
-                : <Pill tone="warn"><CircleDashed className="size-3.5" />Daily missing</Pill>}
+                : <Pill tone={dailyExpected ? "warn" : "muted"}><CircleDashed className="size-3.5" />{dailyExpected ? "Daily missing" : "No Daily QA scheduled"}</Pill>}
             </div>
 
             <button className="mt-4 text-sm text-primary underline-offset-4 hover:underline" onClick={() => setOpen(open === s.id ? null : s.id)}>{open === s.id ? "Hide details" : "Show details"}</button>
             {open === s.id && <>
             <div className="mt-4 grid grid-cols-3 gap-4">
               <Stat label="Daily at" value={daily ? daily.time : "—"} />
-              <Stat label="Monthly tests" value={`${done}/${MONTHLY_CHECKLIST.length}`} sub={done < MONTHLY_CHECKLIST.length ? `due ${month.slice(5)}/${MONTHLY_DUE_DAY}` : "found"} />
+              <Stat label="Monthly tests" value={`${done}/${MONTHLY_CHECKLIST.length}`} sub={done < MONTHLY_CHECKLIST.length ? `due ${month.slice(5)}/${schedule.dueDay}` : "found"} />
               <Stat label="To review" value={String(p)} />
             </div>
 
@@ -142,8 +140,8 @@ function Today() {
               <p className="mb-1.5 text-sm text-muted-foreground">Last 7 days</p>
               <div className="flex gap-1.5">
                 {last7.map((d) => (
-                  <div key={d.iso} title={`${d.iso}: ${d.ok ? "received" : "missing"}`}
-                    className={d.ok ? "h-7 flex-1 rounded-sm bg-ok/70" : "h-7 flex-1 rounded-sm border-2 border-dashed border-warn"} />
+                  <div key={d.iso} title={`${d.iso}: ${d.ok ? "received" : d.expected ? "missing" : "unscheduled"}`}
+                    className={`h-7 flex-1 rounded-sm ${d.ok ? "bg-ok/70" : d.expected ? "border-2 border-dashed border-warn" : "bg-muted"}`} />
                 ))}
               </div>
             </div>
@@ -204,12 +202,16 @@ function Today() {
   );
 }
 
-function Summary({ label, value, tone }: { label: string; value: string; tone?: "bad" | undefined }) {
+function Summary({ label, value, tone, icon: Icon, to }: { label: string; value: string; tone?: "bad" | undefined; icon: LucideIcon; to: "/reports" | "/review" | "/monthly" }) {
   return (
-    <div className="rounded-lg border bg-card p-4">
-      <p className="text-sm text-muted-foreground">{label}</p>
-      <p className={tone === "bad" ? "font-mono text-2xl font-medium text-destructive" : "font-mono text-2xl font-medium"}>{value}</p>
-    </div>
+    <Link to={to} className="group rounded-xl border bg-card p-4 shadow-sm transition-colors hover:border-primary/50 focus-visible:outline-2 focus-visible:outline-ring">
+      <div className="mb-3 flex items-center justify-between">
+        <Icon className={tone === "bad" ? "size-5 text-destructive" : "size-5 text-primary"} />
+        <ArrowRight className="size-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+      </div>
+      <p className={tone === "bad" ? "font-mono text-2xl font-semibold tracking-tight text-destructive" : "font-mono text-2xl font-semibold tracking-tight"}>{value}</p>
+      <p className="mt-1 text-sm text-muted-foreground">{label}</p>
+    </Link>
   );
 }
 

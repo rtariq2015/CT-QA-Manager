@@ -18,7 +18,6 @@ import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as ReviewRouteImport } from './routes/review'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TrendsRouteImport } from './routes/trends'
-import { Route as ApiPublicQaPublishRouteImport } from './routes/api/public/qa-publish'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -65,11 +64,6 @@ const TrendsRoute = TrendsRouteImport.update({
   path: '/trends',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicQaPublishRoute = ApiPublicQaPublishRouteImport.update({
-  id: '/api/public/qa-publish',
-  path: '/api/public/qa-publish',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -81,7 +75,6 @@ export interface FileRoutesByFullPath {
   '/review': typeof ReviewRoute
   '/settings': typeof SettingsRoute
   '/trends': typeof TrendsRoute
-  '/api/public/qa-publish': typeof ApiPublicQaPublishRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -93,7 +86,6 @@ export interface FileRoutesByTo {
   '/review': typeof ReviewRoute
   '/settings': typeof SettingsRoute
   '/trends': typeof TrendsRoute
-  '/api/public/qa-publish': typeof ApiPublicQaPublishRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -106,7 +98,6 @@ export interface FileRoutesById {
   '/review': typeof ReviewRoute
   '/settings': typeof SettingsRoute
   '/trends': typeof TrendsRoute
-  '/api/public/qa-publish': typeof ApiPublicQaPublishRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -120,7 +111,6 @@ export interface FileRouteTypes {
     | '/review'
     | '/settings'
     | '/trends'
-    | '/api/public/qa-publish'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -132,7 +122,6 @@ export interface FileRouteTypes {
     | '/review'
     | '/settings'
     | '/trends'
-    | '/api/public/qa-publish'
   id:
     | '__root__'
     | '/'
@@ -144,7 +133,6 @@ export interface FileRouteTypes {
     | '/review'
     | '/settings'
     | '/trends'
-    | '/api/public/qa-publish'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -157,7 +145,6 @@ export interface RootRouteChildren {
   ReviewRoute: typeof ReviewRoute
   SettingsRoute: typeof SettingsRoute
   TrendsRoute: typeof TrendsRoute
-  ApiPublicQaPublishRoute: typeof ApiPublicQaPublishRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -225,13 +212,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TrendsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/qa-publish': {
-      id: '/api/public/qa-publish'
-      path: '/api/public/qa-publish'
-      fullPath: '/api/public/qa-publish'
-      preLoaderRoute: typeof ApiPublicQaPublishRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -245,7 +225,6 @@ const rootRouteChildren: RootRouteChildren = {
   ReviewRoute: ReviewRoute,
   SettingsRoute: SettingsRoute,
   TrendsRoute: TrendsRoute,
-  ApiPublicQaPublishRoute: ApiPublicQaPublishRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

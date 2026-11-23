@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { createFileRoute } from "@tanstack/react-router";
 import { CheckCircle2, CircleDashed } from "lucide-react";
 import { useMemo, useState } from "react";
-import { MONTHLY_CHECKLIST, MONTHLY_DUE_DAY, SCANNERS, TODAY, isOutOfLimit, monthlyCoverage, type ScannerId } from "@/lib/qa-data";
+import { MONTHLY_CHECKLIST, SCANNERS, addDays, isOutOfLimit, isScheduledQaDay, monthlyCoverage, type ScannerId } from "@/lib/qa-data";
 import { useQa } from "@/lib/qa-store";
 import { PageHeader, Pill, ScannerDot } from "@/components/qa/ui";
 import { cn } from "@/lib/utils";
@@ -21,18 +21,20 @@ export const Route = createFileRoute("/monthly")({
   component: Monthly,
 });
 
-function monthOptions() {
+function monthOptions(today: string, reportMonths: string[]) {
   const out: string[] = [];
-  const d = new Date(TODAY + "T00:00:00Z");
+  const d = new Date(today.slice(0, 7) + "-01T00:00:00Z");
   for (let i = 0; i < 12; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1); }
-  return out;
+  return [...new Set([...out, ...reportMonths])].sort().reverse();
 }
 
 function Monthly() {
-  const { reports } = useQa();
+  const { mode, reports, today, schedule } = useQa();
   const [scanner, setScanner] = useState<ScannerId>("flash");
-  const months = monthOptions();
-  const [month, setMonth] = useState(months[0] ?? TODAY.slice(0, 7));
+  const currentMonth = today.slice(0, 7);
+  const months = useMemo(() => monthOptions(today, reports.map((r) => r.date.slice(0, 7)).filter((m) => m <= currentMonth)), [today, currentMonth, reports]);
+  const [monthPick, setMonth] = useState<string | null>(null);
+  const month = monthPick && months.includes(monthPick) ? monthPick : currentMonth;
 
   const items = useMemo(() => {
     const mine = reports.filter((r) => r.scanner === scanner && r.date.startsWith(month) && r.type === "Monthly");
@@ -45,23 +47,24 @@ function Monthly() {
   const unfiled = reports.filter((r) => r.scanner === scanner && r.date.startsWith(month) && r.needsReview && r.suggested === "Monthly").length;
   const done = items.filter((i) => i.src).length;
 
+  const last = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+  const summaryEnd = month === currentMonth ? Number(today.slice(8, 10)) : last;
+  const daysExpected = new Set(Array.from({ length: summaryEnd }, (_, i) => addDays(`${month}-01`, i)).filter((date) => isScheduledQaDay(date, schedule.days)));
   const summary = SCANNERS.map((s) => {
     const mine = reports.filter((r) => r.scanner === s.id && r.date.startsWith(month));
-    const days = new Set(mine.filter((r) => r.type === "Daily").map((r) => r.date)).size;
-    const last = Number(new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate());
-    const expected = month === TODAY.slice(0, 7) ? Number(TODAY.slice(8, 10)) : last;
-    return { s, days, expected, cov: monthlyCoverage(reports, s.id, month), notOk: mine.filter((r) => r.printedStatus === "NOT OK").sort((a, b) => a.date.localeCompare(b.date)) };
+    const days = new Set(mine.filter((r) => r.type === "Daily" && daysExpected.has(r.date)).map((r) => r.date)).size;
+    return { s, days, cov: monthlyCoverage(reports, s.id, month), notOk: mine.filter((r) => r.printedStatus === "NOT OK").sort((a, b) => a.date.localeCompare(b.date)) };
   });
   const monthName = new Date(month + "-01T00:00:00Z").toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
   return (
     <div className="mx-auto max-w-5xl">
       <section className="hidden print:block">
-        <h1 className="mb-4 text-2xl font-semibold">CT QA monthly summary · {monthName}</h1>
-        {summary.map(({ s, days, expected, cov, notOk }) => (
+        <h1 className="mb-4 text-2xl font-semibold">{mode === "demo" ? "Demo · " : ""}CT QA monthly summary · {monthName}</h1>
+        {summary.map(({ s, days, cov, notOk }) => (
           <div key={s.id} className="mb-6 break-inside-avoid border-b pb-4">
             <h2 className="text-lg font-semibold">{s.name} · {s.model}</h2>
-            <p>Daily reports received: {days} of {expected} days</p>
+            <p>Daily reports received: {days} of {daysExpected.size} scheduled days</p>
             <p>Monthly tests found: {cov.done} of {MONTHLY_CHECKLIST.length}{cov.missing.length ? ` (missing: ${cov.missing.map((c) => c.label).join(", ")})` : ""}</p>
             <p>Printed NOT OK: {notOk.length === 0 ? "none" : notOk.map((r) => `${r.date} (${r.type})`).join(", ")}</p>
           </div>
@@ -69,7 +72,7 @@ function Monthly() {
         <p className="text-sm">Filing is not clinical sign-off. Review with the department physicist.</p>
       </section>
       <div className="print:hidden">
-      <PageHeader eyebrow={`Monthly · due day ${MONTHLY_DUE_DAY}`} title={`${done} of ${items.length} tests found`}>
+      <PageHeader eyebrow={`Monthly · due day ${schedule.dueDay}`} title={`${done} of ${items.length} tests found`}>
         <button onClick={() => window.print()} className="no-print rounded-md border px-4 py-2 text-sm hover:bg-muted">Print monthly summary</button>
         <select value={month} onChange={(e) => setMonth(e.target.value)} className="h-11 rounded-md border bg-card px-3" aria-label="Month">
           {months.map((m) => <option key={m} value={m}>{new Date(m + "-01T00:00:00Z").toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })}</option>)}

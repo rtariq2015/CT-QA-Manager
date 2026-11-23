@@ -1,7 +1,7 @@
 {
   "name": "tanstack_start_ts",
   "private": true,
-  "version": "5.8.0",
+  "version": "5.8.1",
   "productName": "CT QA Manager",
   "main": "electron/main.cjs",
   "sideEffects": false,
@@ -10,6 +10,7 @@
     "dev": "vite dev",
     "build": "vite build",
     "build:dev": "vite build --mode development",
+    "package:windows": "node scripts/package-windows.mjs",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
