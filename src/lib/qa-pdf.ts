@@ -6,24 +6,34 @@ import { saveArchivedReport } from "./qa-library";
 
 const sourceUrls = new WeakMap<Report, string>();
 
+export interface PdfImportResult {
+  report: Report;
+  cached: boolean;
+  readMs: number;
+  saved: boolean;
+  archiveError?: string;
+}
+
 /** Import through the same filing and archive path for folders and individual PDFs. */
-export async function importQaPdf(file: File, addReport: (report: Report) => Report) {
+export async function importQaPdf(file: File, addReport: (report: Report) => Report): Promise<PdfImportResult> {
+  const start = performance.now();
   const bytes = await file.arrayBuffer();
   const bridge = desktop();
-  const parsed = await readQaPdf(file, bytes, !!bridge);
+  const { report: parsed, cached } = await readQaPdf(file, bytes, !!bridge);
   const originalUrl = sourceUrls.get(parsed) ?? URL.createObjectURL(file);
   sourceUrls.set(parsed, originalUrl);
   const report = { ...parsed, originalUrl };
   const filed = addReport(report);
-  if (!bridge) return { report: filed, saved: false };
+  const result = { report: filed, cached, readMs: Math.round(performance.now() - start) };
+  if (!bridge) return { ...result, saved: false };
 
   try {
     const saved = await saveArchivedReport(filed, new Uint8Array(bytes));
-    return { report: filed, saved };
+    return { ...result, saved };
   } catch (err) {
     const archiveError = err instanceof Error ? err.message : String(err);
     log("error", "folder", `Could not save a copy of ${file.name}: ${archiveError}`);
-    return { report: filed, saved: false, archiveError };
+    return { ...result, saved: false, archiveError };
   }
 }
 
@@ -38,7 +48,7 @@ async function readQaPdf(file: File, bytes: ArrayBuffer, preserveBytes: boolean)
     const hash = digest && Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
     const key = hash && `${hash}:${file.name}`;
     const previous = key ? parsedReports.get(key) : undefined;
-    if (previous) return previous;
+    if (previous) return { report: previous, cached: true };
     // PDF.js transfers its input buffer to the worker.
     const r = await readInner(file.name, preserveBytes ? bytes.slice(0) : bytes);
     if (key) {
@@ -50,8 +60,7 @@ async function readQaPdf(file: File, bytes: ArrayBuffer, preserveBytes: boolean)
     }
     const ms = Math.round(performance.now() - t0);
     log(r.printedStatus === "NOT OK" ? "warning" : "success", "file", `Read ${file.name}: ${r.scanner}${r.software && r.software !== "Not available" ? ` (${r.software})` : ""}, looks like ${r.suggested}, ${r.measurements.length} readings, printed ${r.printedStatus ?? "n/a"}, ${ms} ms`);
-    if (r.extractionNotes?.length) log("warning", "file", `Partly read ${file.name}: ${r.extractionNotes.join("; ")}`);
-    return r;
+    return { report: r, cached: false };
   } catch (e) {
     log("error", "file", `Could not read ${file.name}: ${(e as Error).message}`);
     throw e;

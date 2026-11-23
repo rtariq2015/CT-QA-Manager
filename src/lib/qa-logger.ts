@@ -1,4 +1,6 @@
-// Live activity log: records what the app does (no patient data, no passwords, no PDF text).
+// Detailed local activity and a separate structured support export.
+import { version } from "../../package.json";
+import { clearScanHistory, getScanHistory } from "./qa-scan-log";
 import type { FolderKind, OpenedFolder } from "./qa-settings";
 
 export type LogLevel = "info" | "success" | "warning" | "error";
@@ -52,7 +54,7 @@ export function log(level: LogLevel, area: LogArea, message: string) {
   emit();
 }
 export function getLog(): LogEntry[] { load(); return entries; }
-export function clearLog() { entries = []; emit(); }
+export function clearLog() { entries = []; clearScanHistory(); emit(); }
 export function subscribe(f: () => void) { subs.add(f); return () => { subs.delete(f); }; }
 
 export function getConnection() { return connection; }
@@ -70,11 +72,11 @@ export function exportText(list: LogEntry[] = getLog()): string {
   return list.map((e) => `${e.at}  ${e.level.toUpperCase().padEnd(7)} ${e.area.padEnd(8)} ${e.message}`).join("\n") + "\n";
 }
 
-export function exportDiagnostic(extra: Record<string, unknown>): string {
+export function exportDiagnostic(counts: { reports: number; waitingInReview: number; app: "desktop" | "web" }): string {
+  const { reports, waitingInReview, app } = counts;
   return JSON.stringify({
-    kind: "ctqa-diagnostic", createdAt: new Date().toISOString(), connection,
-    note: "Contains no PDFs, no PDF text, no passwords and no patient data.",
-    ...extra, log: getLog(),
+    kind: "ctqa-diagnostic", schemaVersion: 2, appVersion: version, createdAt: new Date().toISOString(), app,
+    reports, waitingInReview, scans: getScanHistory(),
   }, null, 2);
 }
 

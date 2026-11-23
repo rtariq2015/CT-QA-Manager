@@ -9,7 +9,7 @@ export interface DesktopBridge {
   hasLogin(name: string): Promise<boolean>;
   saveCopy(rel: string, data: Uint8Array, previous?: string[]): Promise<{ ok: boolean; path?: string; existed?: boolean; error?: string }>;
   openLibrary(): Promise<{ ok: boolean; path: string; error?: string }>;
-  readFolder(s: Source): Promise<{ ok: boolean; error?: string; files: { name: string; data: Uint8Array }[] }>;
+  readFolder(s: Source): Promise<{ ok: boolean; error?: string; diagnostic?: { code: string; nativeCode?: number }; files: { name: string; data: Uint8Array }[] }>;
 }
 export const desktop = (): DesktopBridge | undefined =>
   typeof window === "undefined" ? undefined : (window as unknown as { ctqaDesktop?: DesktopBridge }).ctqaDesktop;

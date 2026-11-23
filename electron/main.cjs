@@ -159,8 +159,10 @@ function netUse(root, login) {
   return new Promise((resolve) => {
     if (process.platform !== "win32" || !root || !login) return resolve("skipped");
     execFile("net", ["use", root, login.password, `/user:${login.user}`, "/persistent:no"], { windowsHide: true }, (err, _o, stderr) => {
-      // "Multiple connections" means it is already connected, which is fine.
-      resolve(err && !/1219/.test(String(stderr)) ? `failed: ${String(stderr).trim()}` : "ok");
+      const match = /\b(?:System error|error)\s+(\d+)\b/i.exec(String(stderr));
+      const nativeCode = match ? Number(match[1]) : /\b1219\b/.test(String(stderr)) ? 1219 : undefined;
+      // Windows may already have a connection under another account. Try reading it.
+      resolve(err ? { code: nativeCode === 1219 ? "credential-conflict" : "network-login-failed", nativeCode } : "ok");
     });
   });
 }
@@ -176,20 +178,37 @@ async function walkPdfs(dir, out = []) {
 handleAppMessage("ctqa:readFolder", async (_e, source) => {
   const p = String(source.path || "");
   let login = null;
+  let loginResult = null;
   if (source.kind === "network") {
     login = getLogin(source.name);
-    const r = await netUse(shareRoot(p), login);
-    if (r.startsWith("failed")) return { ok: false, error: `Login failed for ${source.name}. Check the username and password.`, files: [] };
+    loginResult = await netUse(shareRoot(p), login);
+    if (loginResult?.code === "network-login-failed") {
+      return { ok: false, error: `Login failed for ${source.name}. Check the saved account and password.`, diagnostic: loginResult, files: [] };
+    }
   }
+  let listing = true;
   try {
+    const paths = await walkPdfs(p);
+    listing = false;
     const files = [];
-    for (const file of await walkPdfs(p)) {
+    for (const file of paths) {
       files.push({ name: path.basename(file), data: await fs.promises.readFile(file) });
     }
     return { ok: true, files };
   } catch (error) {
-    if (error.message.startsWith("This folder contains")) return { ok: false, error: error.message, files: [] };
-    return { ok: false, error: `Cannot reach ${p}${login ? "" : source.kind === "network" ? " (no saved password)" : ""}`, files: [] };
+    if (error.message.startsWith("This folder contains")) {
+      return { ok: false, error: error.message, diagnostic: { code: "folder-limit" }, files: [] };
+    }
+    const code = loginResult?.code === "credential-conflict" ? "credential-conflict"
+      : !listing ? "source-pdf-read-failed"
+      : error.code === "EACCES" || error.code === "EPERM" ? "folder-access-denied"
+      : error.code === "ENOENT" || error.code === "ENOTDIR" ? "folder-not-found" : "folder-unavailable";
+    const nativeCode = loginResult?.nativeCode ?? (Number.isInteger(error.errno) ? error.errno : undefined);
+    const message = code === "credential-conflict" ? "Windows already has a connection using a different account."
+      : code === "source-pdf-read-failed" ? "A PDF in the folder could not be read from disk."
+      : code === "folder-access-denied" ? "Access to the folder was denied."
+      : code === "folder-not-found" ? "The folder or drive could not be found." : "The folder could not be opened.";
+    return { ok: false, error: `${source.name}: ${message}`, diagnostic: { code, nativeCode }, files: [] };
   }
 });
 

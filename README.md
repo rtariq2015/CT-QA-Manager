@@ -43,6 +43,10 @@ The parser supports older Siemens syngo VB PDFs and syngo VA40A reports, includi
 
 The desktop app works offline with local PDFs. Windows protects saved network credentials, and backups include filing decisions and settings. The report library starts empty until you import PDFs or connect a scanner folder.
 
+## Share a diagnostic
+
+Open **Log → Download diagnostic file** to share scan totals, read timings, cache hits, review reasons, and connection error codes. The diagnostic keeps the last 60 scans separately from the detailed activity log and omits file names, folder paths, and PDF contents. Use **Download log** for the detailed local history.
+
 ## Build from source
 
 ```sh

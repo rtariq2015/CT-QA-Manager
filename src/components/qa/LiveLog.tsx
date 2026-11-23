@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Download, Pause, Play, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { desktop } from "@/lib/qa-desktop";
 import { clearLog, exportDiagnostic, exportText, getConnection, getLog, subscribe, type Connection, type LogEntry } from "@/lib/qa-logger";
 import { folderRows, unmatchedFolders, normalizeConfig, SETTINGS_KEY, DEFAULT, type Source } from "@/lib/qa-settings";
 import { useQa } from "@/lib/qa-store";
@@ -74,7 +75,7 @@ export function LiveLogView({ tall }: { tall?: boolean }) {
   useEffect(() => { if (!paused && box.current) box.current.scrollTop = box.current.scrollHeight; }, [rows.length, paused]);
   const day = new Date().toISOString().slice(0, 10);
   const diag = () => save(`CTQA-diagnostic-${day}.json`, exportDiagnostic({
-    browser: navigator.userAgent, reports: qa.reports.length, openedPdfs: qa.reports.filter((r) => r.source === "uploaded").length,
+    app: desktop() ? "desktop" : "web", reports: qa.reports.length,
     waitingInReview: qa.pending.length,
   }), "application/json");
 
@@ -102,7 +103,7 @@ export function LiveLogView({ tall }: { tall?: boolean }) {
         <Button size="sm" variant="outline" onClick={diag}><Download />Download diagnostic file</Button>
         <Button size="sm" variant="ghost" onClick={clearLog}><Trash2 />Clear</Button>
       </div>
-      <p className="text-xs text-muted-foreground">The log has no PDF contents, passwords or patient data. Drop the downloaded file in the chat to get help.</p>
+      <p className="text-xs text-muted-foreground">Share the diagnostic file for scan totals, timings, and error codes. The detailed log can contain file and folder names.</p>
     </div>
   );
 }

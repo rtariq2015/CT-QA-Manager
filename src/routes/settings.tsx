@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PageHeader, Pill } from "@/components/qa/ui";
 import { LiveLogView, useConnection } from "@/components/qa/LiveLog";
-import { log } from "@/lib/qa-logger";
+import { exportDiagnostic, log } from "@/lib/qa-logger";
 import { buildUsbPackage } from "@/lib/qa-portable";
 import { desktop } from "@/lib/qa-desktop";
 
@@ -135,13 +135,9 @@ function Settings() {
       toast.success(`Restored ${Object.keys(b.filings).length} filing decisions`);
     } catch (e) { toast.error((e as Error).message); }
   };
-  const problemReport = () => download("CTQA-problem-report.json", JSON.stringify({
-    createdAt: new Date().toISOString(), browser: navigator.userAgent, screen: `${window.innerWidth}x${window.innerHeight}`,
-    reports: qa.reports.length, openedPdfs: qa.reports.filter((r) => r.source === "uploaded").length,
-    partlyRead: qa.reports.filter((r) => r.source === "uploaded" && r.extractionNotes?.length).length,
-    waitingToFile: qa.pending.length, scannerFolders: cfg.sources.length, theme: qa.theme,
-    note: "Contains no PDFs, file names, user names or patient data.",
-  }, null, 2));
+  const problemReport = () => download("CTQA-problem-report.json", exportDiagnostic({
+    app: desktop() ? "desktop" : "web", reports: qa.reports.length, waitingInReview: qa.pending.length,
+  }));
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -239,7 +235,7 @@ function Settings() {
           </section>}
           <section className="rounded-lg border bg-card p-4">
             <h2 className="mb-1 font-medium">Problem report</h2>
-            <p className="mb-3 text-sm text-muted-foreground">If something looks wrong, download this short summary and send it to whoever maintains the program. It has no reports or patient data.</p>
+            <p className="mb-3 text-sm text-muted-foreground">Download recent scan totals, timings, and error codes for troubleshooting. The export omits PDF contents, filenames, and folder paths.</p>
             <Button variant="outline" onClick={problemReport}>Download problem report</Button>
           </section>
         </TabsContent>

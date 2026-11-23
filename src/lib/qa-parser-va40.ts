@@ -1,3 +1,4 @@
+import { PdfReadError } from "./qa-read-error";
 import { distinctMeasurements, validReportTimestamp } from "./qa-parser-validation";
 import { type Measurement, type MetricId, type Report } from "./qa-data";
 import type { PdfTextPage, PrintedSection, PrintedStatus } from "./qa-parser";
@@ -52,11 +53,11 @@ export function parseVa40Pages(pages: PdfTextPage[], filename: string, sizeKb: n
   }
   if (!stamp) {
     const f = /(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)/.exec(all);
-    if (!f) throw new Error("Report date could not be read. This PDF needs manual review.");
+    if (!f) throw new PdfReadError("invalid-report-date", "Report date could not be read. This PDF needs manual review.");
     stamp = { date: iso(f[1]!, f[2]!, f[3]!), time: time24(f[4]!, f[5]!, f[6]!, f[7]!) };
   }
 
-  if (!validReportTimestamp(stamp.date, stamp.time)) throw new Error("Report date or time could not be read. This PDF needs manual review.");
+  if (!validReportTimestamp(stamp.date, stamp.time)) throw new PdfReadError("invalid-report-date", "Report date or time could not be read. This PDF needs manual review.");
 
   const measurements: Measurement[] = [];
   let extractionIncomplete = false;

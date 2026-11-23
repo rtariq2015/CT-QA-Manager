@@ -1,3 +1,4 @@
+import { startScan } from "@/lib/qa-scan-log";
 import { tidyFileName } from "@/lib/qa-library";
 import { createFileRoute } from "@tanstack/react-router";
 import { Search, FileUp, LoaderCircle, ChevronLeft, ChevronRight, X, FileText } from "lucide-react";
@@ -36,15 +37,19 @@ function Reports() {
   const importFiles = async (files: FileList | null) => {
     if (!files) return;
     setReading(true); setImportMessage("");
+    const scan = startScan("selected-files");
     let count = 0; const errors: string[] = [];
     for (const file of Array.from(files)) {
       try {
-        const { report, archiveError } = await importQaPdf(file, addReport);
+        const result = await importQaPdf(file, addReport);
+        scan.recordRead(result);
+        const { report, archiveError } = result;
         setSelected(report);
         count++;
         if (archiveError) errors.push(`${file.name}: could not save to the QA Library (${archiveError})`);
-      } catch (error) { errors.push(`${file.name}: ${error instanceof Error ? error.message : "Could not read this PDF"}`); }
+      } catch (error) { scan.recordFailure(error); errors.push(`${file.name}: ${error instanceof Error ? error.message : "Could not read this PDF"}`); }
     }
+    scan.finish(files.length);
     setReading(false); setImportMessage(`${count} local PDF${count === 1 ? "" : "s"} read. ${errors.join(" ")}`);
     if (picker.current) picker.current.value = "";
   };

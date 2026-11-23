@@ -1,14 +1,27 @@
 import { isOutOfLimit, type Report } from "./qa-data";
 
-/** Why a report needs a person, or null when it can be filed automatically. */
-export function reviewReason(r: Report): string | null {
-  if (r.printedStatus === "NOT OK") return "Printed NOT OK — acknowledge before filing";
-  if (r.measurements.some(isOutOfLimit)) return "A reading is outside its printed limit";
-  if (r.printedStatus !== "OK") return "The printed summary could not be read";
-  if (!r.measurements.length) return "No supported measurements with printed limits could be read";
-  if (r.extractionIncomplete) return "Some measurements or printed limits could not be read";
-  if (r.suggested === "Other") return "Not a routine Daily or Monthly report";
+const reviewLabels = {
+  "printed-not-ok": "Printed NOT OK — acknowledge before filing",
+  "outside-printed-limit": "A reading is outside its printed limit",
+  "missing-printed-summary": "The printed summary could not be read",
+  "no-supported-readings": "No supported measurements with printed limits could be read",
+  "incomplete-readings": "Some measurements or printed limits could not be read",
+  "non-routine-report": "Not a routine Daily or Monthly report",
+} as const;
+
+export function reviewReasonCode(r: Report): keyof typeof reviewLabels | null {
+  if (r.printedStatus === "NOT OK") return "printed-not-ok";
+  if (r.measurements.some(isOutOfLimit)) return "outside-printed-limit";
+  if (r.printedStatus !== "OK") return "missing-printed-summary";
+  if (!r.measurements.length) return "no-supported-readings";
+  if (r.extractionIncomplete) return "incomplete-readings";
+  if (r.suggested === "Other") return "non-routine-report";
   return null;
+}
+
+export function reviewReason(r: Report): string | null {
+  const code = reviewReasonCode(r);
+  return code ? reviewLabels[code] : null;
 }
 
 /** File clean routine reports and keep unreadable reports in review. */
