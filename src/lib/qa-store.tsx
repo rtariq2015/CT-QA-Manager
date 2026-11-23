@@ -3,15 +3,14 @@ import { reviewReason, triage } from "./qa-triage";
 import { saveArchivedReport } from "./qa-library";
 import { desktop } from "./qa-desktop";
 import { log } from "./qa-logger";
-import { getReports, localDate, TODAY, type Report, type ReportType } from "./qa-data";
+import { localDate, type Report, type ReportType } from "./qa-data";
 import { DEFAULT, normalizeConfig, SETTINGS_KEY, type Config } from "./qa-settings";
 
 interface Filing { id: string; type: ReportType; previous: ReportType | undefined; at: number }
-type Mode = "live" | "demo";
 type Filings = Record<string, ReportType>;
 type Schedule = Pick<Config, "days" | "dueDay">;
-const isDemoId = (id: string) => /^r\d+$/.test(id);
-const liveFilings = (f: Filings) => Object.fromEntries(Object.entries(f).filter(([id]) => !isDemoId(id)));
+// Filter out synthetic report IDs found in older backups.
+const importedFilings = (f: Filings) => Object.fromEntries(Object.entries(f).filter(([id]) => !/^r\d+$/.test(id)));
 
 function filedReport(report: Report, filings: Filings): Report {
   const type = filings[report.id];
@@ -19,12 +18,10 @@ function filedReport(report: Report, filings: Filings): Report {
 }
 
 interface Store {
-  mode: Mode;
-  setMode: (mode: Mode) => void;
   today: string;
   schedule: Schedule;
   reports: Report[];
-  addReport: (report: Report, showLive?: boolean) => Report;
+  addReport: (report: Report) => Report;
   pending: Report[];
   file: (id: string, type: ReportType) => Promise<boolean>;
   undo: () => Promise<Filing | undefined>;
@@ -44,15 +41,12 @@ const g = globalThis as { __qaCtx?: Context<Store | null> };
 const Ctx = g.__qaCtx ?? (g.__qaCtx = createContext<Store | null>(null));
 
 export function QaProvider({ children }: { children: ReactNode }) {
-  const [mode, setMode] = useState<Mode>("live");
-  const [clockDay, setClockDay] = useState(TODAY);
+  const [clockDay, setClockDay] = useState("");
   const [schedule, setSchedule] = useState<Schedule>(DEFAULT);
   const [overrides, setOverrideState] = useState<Filings>({});
   const currentOverrides = useRef<Filings>({});
-  const [demoOverrides, setDemoOverrides] = useState<Filings>({});
   const [localReports, setLocalReports] = useState<Report[]>([]);
-  const [liveHistory, setLiveHistory] = useState<Filing[]>([]);
-  const [demoHistory, setDemoHistory] = useState<Filing[]>([]);
+  const [history, setHistory] = useState<Filing[]>([]);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [compact, setCompact] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -69,7 +63,7 @@ export function QaProvider({ children }: { children: ReactNode }) {
     try {
       const saved = JSON.parse(localStorage.getItem("qa-filings") ?? "{}");
       if (saved && typeof saved === "object") {
-        setOverrides(liveFilings(Object.fromEntries(Object.entries(saved).filter(([, v]) => v === "Daily" || v === "Monthly" || v === "Other")) as Filings));
+        setOverrides(importedFilings(Object.fromEntries(Object.entries(saved).filter(([, v]) => v === "Daily" || v === "Monthly" || v === "Other")) as Filings));
       }
     } catch { /* ignore bad saved data */ }
     setLoaded(true);
@@ -101,15 +95,7 @@ export function QaProvider({ children }: { children: ReactNode }) {
     document.documentElement.classList.toggle("compact", compact);
   }, [theme, compact]);
 
-  const demo = mode === "demo";
-  const history = demo ? demoHistory : liveHistory;
-  const setHistory = demo ? setDemoHistory : setLiveHistory;
-  const filingOverrides = demo ? demoOverrides : overrides;
-  const setFilingOverrides = demo ? setDemoOverrides : setOverrides;
-  const reports = useMemo(
-    () => (demo ? getReports() : localReports).map((r) => filedReport(r, filingOverrides)),
-    [demo, localReports, filingOverrides],
-  );
+  const reports = useMemo(() => localReports.map((report) => filedReport(report, overrides)), [localReports, overrides]);
   const pending = useMemo(() => reports.filter((r) => r.needsReview), [reports]);
 
   const [filingBusy, setFilingBusy] = useState(false);
@@ -128,45 +114,44 @@ export function QaProvider({ children }: { children: ReactNode }) {
   const file = useCallback(async (id: string, type: ReportType) => {
     const report = reports.find((r) => r.id === id);
     if (!report || writingArchive.current) return false;
-    if (!demo && desktop()) await updateArchive({ ...report, type });
-    setFilingOverrides((o) => ({ ...o, [id]: type }));
-    log("info", "filing", `${demo ? "Demo: " : ""}${report.fileName} filed as ${type}`);
-    setHistory((h) => [{ id, type, previous: filingOverrides[id], at: Date.now() }, ...h]);
+    if (desktop()) await updateArchive({ ...report, type });
+    setOverrides((o) => ({ ...o, [id]: type }));
+    log("info", "filing", `${report.fileName} filed as ${type}`);
+    setHistory((h) => [{ id, type, previous: overrides[id], at: Date.now() }, ...h]);
     return true;
-  }, [reports, demo, updateArchive, filingOverrides, setFilingOverrides, setHistory]);
+  }, [reports, updateArchive, overrides, setOverrides, setHistory]);
 
   const undo = useCallback(async () => {
     const last = history[0];
     if (!last || writingArchive.current) return;
-    const report = (demo ? getReports() : localReports).find((r) => r.id === last.id);
-    if (report && !demo && desktop()) {
+    const report = localReports.find((r) => r.id === last.id);
+    if (report && desktop()) {
       await updateArchive({ ...report, type: last.previous ?? triage(report).type });
     }
-    setFilingOverrides((o) => {
+    setOverrides((o) => {
       const next = { ...o };
       if (last.previous) next[last.id] = last.previous;
       else delete next[last.id];
       return next;
     });
     setHistory((h) => h.slice(1));
-    log("info", "filing", `${demo ? "Demo: " : ""}Undid filing (${last.type})`);
+    log("info", "filing", `Undid filing (${last.type})`);
     return last;
-  }, [history, demo, localReports, updateArchive, setFilingOverrides, setHistory]);
+  }, [history, localReports, updateArchive, setOverrides, setHistory]);
 
-  const addReport = useCallback((report: Report, showLive = true) => {
+  const addReport = useCallback((report: Report) => {
     const filed = filedReport(report, currentOverrides.current);
     const action = filed.needsReview ? `sent to Review: ${reviewReason(filed) ?? "needs a look"}` : `${filed.autoFiled ? "auto-filed" : "filed"} as ${filed.type}`;
     log(filed.needsReview ? "warning" : "info", "filing", `${report.fileName} ${action}`);
     setLocalReports((reports) => [...reports.filter((r) => r.id !== report.id), report].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)));
-    if (showLive) setMode("live");
     return filed;
   }, []);
 
   const value: Store = {
-    mode, setMode, today: demo ? TODAY : clockDay, schedule: demo ? DEFAULT : schedule,
+    today: clockDay, schedule,
     reports, addReport, pending, file, undo, filingBusy, history, lastFiling: history[0],
     theme, compact, overrides,
-    restoreFilings: (f) => { const filings = liveFilings(f); setOverrides(filings); setLiveHistory([]); log("info", "settings", `Backup restored: ${Object.keys(filings).length} filings`); },
+    restoreFilings: (f) => { const filings = importedFilings(f); setOverrides(filings); setHistory([]); log("info", "settings", `Backup restored: ${Object.keys(filings).length} filings`); },
     toggleTheme: () => setTheme((t) => { const n = t === "dark" ? "light" : "dark"; localStorage.setItem("qa-theme", n); return n; }),
     toggleCompact: () => setCompact((c) => { localStorage.setItem("qa-compact", c ? "0" : "1"); return !c; }),
   };

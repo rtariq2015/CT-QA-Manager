@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseSiemensPages, type PdfTextPage } from "./qa-parser";
-import { getReports, isOutOfLimit, SCANNERS } from "./qa-data";
+import { isOutOfLimit, SCANNERS } from "./qa-data";
 
 const identity: PdfTextPage = { page: 1, lines: ["Product Name SOMATOM Drive", "Software Version syngo CT VB30A_SP10", "2026-11-11 07:05:14"] };
 const summary: PdfTextPage = { page: 2, lines: ["1. Quality Daily Noise OK................ 3", "2. Quality Daily Homogeneity NOT OK................ 6"] };
@@ -63,13 +63,6 @@ describe("Siemens printed report rules", () => {
     expect(report.printedStatus).toBe("NOT OK");
     expect(filed.printedStatus).toBe("NOT OK");
     expect(filed.needsReview).toBe(false);
-  });
-  it("generates deterministic Drive readings for both tubes", () => {
-    const reports = getReports();
-    const drive = reports.find(r => r.scanner === "drive" && r.suggested === "Daily");
-    expect(drive?.measurements.some(m => m.tube === "A")).toBe(true);
-    expect(drive?.measurements.some(m => m.tube === "B")).toBe(true);
-    expect(getReports()).toEqual(reports);
   });
   it("suggests Daily for the supplied Flash noise and water IEC Constancy summary", () => {
     const report = parseSiemensPages([

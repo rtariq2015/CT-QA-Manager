@@ -18,7 +18,7 @@ export function ReportPreview({ report, highlightPage, initialView = "readings" 
     <div className="min-w-0 space-y-4">
       <header className="space-y-3 border-b pb-4">
         <div className="flex flex-wrap items-center gap-2">
-          <Pill tone={report.source === "uploaded" ? "muted" : "warn"}>{report.source === "uploaded" ? "Local PDF" : "Synthetic demo"}</Pill>
+          <Pill tone="muted">Local PDF</Pill>
           <Pill tone={status === "NOT OK" ? "bad" : status === "OK" ? "ok" : "muted"}>Printed result: {status}</Pill>
           <Pill tone="muted">{report.needsReview ? "Filing pending" : `Filed as ${report.type}`}</Pill>
         </div>
@@ -49,7 +49,7 @@ export function ReportPreview({ report, highlightPage, initialView = "readings" 
               <td className="max-w-64 px-2 py-2"><span className="font-medium">{METRICS.find(x => x.id === m.metric)?.label}</span><span className="block text-xs text-muted-foreground">{m.context}</span></td>
               <td className="whitespace-nowrap px-2 py-2 font-mono text-xs">{format(m.value, m.unit)} {m.unit}</td>
               <td className="px-2 py-2 font-mono text-xs">{m.baseline === null ? "—" : format(m.baseline, m.unit)}{m.referenceDate && <span className="block text-muted-foreground">{m.referenceDate}</span>}</td>
-              <td className="whitespace-nowrap px-2 py-2 font-mono text-xs">{format(m.lower, m.unit)} … {format(m.upper, m.unit)}<span className="block text-muted-foreground">{m.limitSource === "printed" ? "Printed" : "Demo"} · {m.unit}</span></td>
+              <td className="whitespace-nowrap px-2 py-2 font-mono text-xs">{format(m.lower, m.unit)} … {format(m.upper, m.unit)}<span className="block text-muted-foreground">Printed · {m.unit}</span></td>
               <td className="px-2 py-2 text-xs">{isOutOfLimit(m) ? "Out of limit" : "Within limits"}</td>
             </tr>)}</tbody>
           </table></div>}

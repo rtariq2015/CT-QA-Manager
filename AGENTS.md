@@ -30,7 +30,7 @@ use the editor.
 <!-- LOVABLE:END -->
 
 ## Project rules
-- Demo data comes from the seeded generator in src/lib/qa-data.ts with a fixed TODAY; keep it deterministic so server and browser renders match.
+- The report library starts empty. Use synthetic fixtures only in tests.
 - Record shapes mirror the Windows CT QA Manager (rtariq2015/QA-Manger) so designs can be ported back; filing state is in-memory in src/lib/qa-store.tsx (no backend).
 
 - Keep uploaded QA PDFs browser-local and in-memory; load PDF.js only inside the file-reader action so private reports are never sent to a server or bundled.

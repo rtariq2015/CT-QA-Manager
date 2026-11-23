@@ -5,7 +5,7 @@ export type LogLevel = "info" | "success" | "warning" | "error";
 export type LogArea = "folder" | "file" | "filing" | "settings" | "app";
 export interface LogEntry { id: number; at: string; level: LogLevel; area: LogArea; message: string }
 export interface Connection {
-  state: "demo" | "reading" | "ready";
+  state: "idle" | "reading" | "ready";
   kind: FolderKind;
   folder?: string;
   done: number;
@@ -20,7 +20,7 @@ export const MAX_LINES = 2000;
 const KEY = "qa-log";
 let entries: LogEntry[] = [];
 let seq = 0;
-let connection: Connection = { state: "demo", kind: "local", done: 0, total: 0, failed: 0, opened: [] };
+let connection: Connection = { state: "idle", kind: "local", done: 0, total: 0, failed: 0, opened: [] };
 const subs = new Set<() => void>();
 let loaded = false;
 
@@ -79,4 +79,4 @@ export function exportDiagnostic(extra: Record<string, unknown>): string {
 }
 
 /** Test helper. */
-export function _reset() { entries = []; seq = 0; loaded = true; connection = { state: "demo", kind: "local", done: 0, total: 0, failed: 0, opened: [] }; }
+export function _reset() { entries = []; seq = 0; loaded = true; connection = { state: "idle", kind: "local", done: 0, total: 0, failed: 0, opened: [] }; }

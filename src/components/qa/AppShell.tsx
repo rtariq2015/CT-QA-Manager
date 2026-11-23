@@ -42,7 +42,7 @@ const SHORTCUTS: [string, string][] = [
 ];
 
 export function AppShell() {
-  const { mode, setMode, pending, theme, toggleTheme } = useQa();
+  const { today, pending, theme, toggleTheme } = useQa();
   useFolderReader(undefined, true);
   const [isDesktop, setIsDesktop] = useState(false);
   useEffect(() => setIsDesktop(!!desktop()), []);
@@ -115,9 +115,6 @@ export function AppShell() {
             <button onClick={() => setKeys(true)} className="hidden items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted md:flex" aria-label="Keyboard shortcuts">
               <Keyboard className="size-4" />Shortcuts
             </button>
-            <Button variant={mode === "demo" ? "secondary" : "ghost"} size="sm" onClick={() => setMode(mode === "live" ? "demo" : "live")}>
-              {mode === "live" ? "Demo data" : "Exit demo"}
-            </Button>
             <button onClick={toggleTheme} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted" aria-label="Switch light or dark mode">
               {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
               <span>{theme === "dark" ? "Light" : "Dark"}</span>
@@ -125,8 +122,7 @@ export function AppShell() {
           </div>
         </header>
         <main className="min-w-0 flex-1 px-4 pb-24 pt-6 md:px-8 md:pb-10 md:pt-8">
-          {mode === "demo" && <p className="mb-4 rounded-md border border-warn/40 bg-warn/15 px-4 py-2 text-sm font-medium" role="status">Demo mode · synthetic reports</p>}
-          <Outlet />
+          {today && <Outlet />}
         </main>
       </div>
 

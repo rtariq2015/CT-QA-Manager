@@ -29,7 +29,7 @@ export function useFolderReader(onDone?: () => void, autoConnect = false) {
   const [busy, setBusy] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
 
-  async function readFiles(files: AsyncIterable<File> | File[], folder: string, kind: "local" | "network" = "local", showLive = true) {
+  async function readFiles(files: AsyncIterable<File> | File[], folder: string, kind: "local" | "network" = "local") {
     const { importQaPdf } = await import("@/lib/qa-pdf");
     const list: File[] = []; for await (const f of files) list.push(f);
     log("info", "folder", `Opened folder "${folder}" (${kind}): ${list.length} PDFs found`);
@@ -39,7 +39,7 @@ export function useFolderReader(onDone?: () => void, autoConnect = false) {
     for (const file of list) {
       setBusy(`Reading ${file.name}…`);
       try {
-        const result = await importQaPdf(file, report => addReport(report, showLive));
+        const result = await importQaPdf(file, addReport);
         ok++;
         if (result.saved) saved++;
         if (result.archiveError) unsaved++;
@@ -69,7 +69,7 @@ export function useFolderReader(onDone?: () => void, autoConnect = false) {
       const res = await d.readFolder({ ...s, kind: kindOf(s) });
       if (!res.ok) { log("error", "folder", res.error ?? `Could not connect ${s.name}`); toast.error(res.error ?? `Could not connect ${s.name}`); continue; }
       const files = res.files.map((f) => new File([f.data as BlobPart], f.name, { type: "application/pdf" }));
-      await readFiles(files, s.path.split(/[\\/]/).filter(Boolean).pop() ?? s.name, kindOf(s), false);
+      await readFiles(files, s.path.split(/[\\/]/).filter(Boolean).pop() ?? s.name, kindOf(s));
     }
     setBusy(null);
   }

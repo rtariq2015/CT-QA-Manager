@@ -111,7 +111,7 @@ function Trends() {
               </ResponsiveContainer>
             )}
           </div>
-          <p className="text-sm text-muted-foreground">{info.note}. {last?.r.source === "uploaded" ? "Local PDF readings · printed limits" : "Synthetic readings · sample-derived and demo limits"}</p>
+          <p className="text-sm text-muted-foreground">{info.note}.</p>
           {picked && (
             <div>
               <div className="mb-2 flex items-center gap-2"><Pill tone="muted">{picked.r.fileName}</Pill><span className="text-sm text-muted-foreground">page {picked.page}</span></div>

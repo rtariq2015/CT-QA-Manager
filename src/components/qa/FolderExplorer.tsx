@@ -56,7 +56,7 @@ export function FolderExplorer({ reports }: { reports: Report[] }) {
                 <FileText className="size-5 shrink-0 text-destructive" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">{tidyFileName(r)}</span>
-                  <span className="block truncate text-xs text-muted-foreground">{r.originalUrl ? `Original: ${r.fileName} · click to open` : "Sample — no PDF"}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{r.originalUrl ? `Original: ${r.fileName} · click to open` : "Original PDF unavailable"}</span>
                 </span>
                 <Pill tone={r.printedStatus === "NOT OK" ? "bad" : "ok"}>{r.printedStatus === "NOT OK" ? "NOT OK" : "OK"}</Pill>
               </button>

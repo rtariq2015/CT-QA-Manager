@@ -4,7 +4,7 @@
 
 [**Download for Windows x64**](https://github.com/rtariq2015/CT-QA-Manager/releases/latest/download/CT-QA-Manager-Windows-x64.zip) · [Release notes](https://github.com/rtariq2015/CT-QA-Manager/releases/latest) · [CT QA Manager Pro](https://github.com/rtariq2015/QA-Manger)
 
-![CT QA Manager dashboard showing synthetic demo data](docs/images/today-demo.png)
+![CT QA Manager dashboard on first launch](docs/images/today.png)
 
 ## Start on Windows
 
@@ -29,7 +29,7 @@ Use **Saved PDFs** to open the **QA Library** next to the program. Keep the full
 
 The parser supports older Siemens syngo VB PDFs and syngo VA40A reports, including SOMATOM Drive, Flash, Edge, and X.cite. It retains printed results and supported readings with their printed tolerances. Incomplete extractions and exceptions stay visible for review. Filing is a document classification step and leaves the scanner’s printed result intact.
 
-The desktop app works offline with local PDFs. Windows protects saved network credentials, and backups include filing decisions and settings. Live mode starts with your imported reports. Choose **Demo data** to explore synthetic examples.
+The desktop app works offline with local PDFs. Windows protects saved network credentials, and backups include filing decisions and settings. The report library starts empty until you import PDFs or connect a scanner folder.
 
 ## Build from source
 

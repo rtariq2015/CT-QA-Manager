@@ -29,7 +29,7 @@ function monthOptions(today: string, reportMonths: string[]) {
 }
 
 function Monthly() {
-  const { mode, reports, today, schedule } = useQa();
+  const { reports, today, schedule } = useQa();
   const [scanner, setScanner] = useState<ScannerId>("flash");
   const currentMonth = today.slice(0, 7);
   const months = useMemo(() => monthOptions(today, reports.map((r) => r.date.slice(0, 7)).filter((m) => m <= currentMonth)), [today, currentMonth, reports]);
@@ -60,7 +60,7 @@ function Monthly() {
   return (
     <div className="mx-auto max-w-5xl">
       <section className="hidden print:block">
-        <h1 className="mb-4 text-2xl font-semibold">{mode === "demo" ? "Demo · " : ""}CT QA monthly summary · {monthName}</h1>
+        <h1 className="mb-4 text-2xl font-semibold">CT QA monthly summary · {monthName}</h1>
         {summary.map(({ s, days, cov, notOk }) => (
           <div key={s.id} className="mb-6 break-inside-avoid border-b pb-4">
             <h2 className="text-lg font-semibold">{s.name} · {s.model}</h2>

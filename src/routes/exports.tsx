@@ -27,7 +27,7 @@ export const Route = createFileRoute("/exports")({
 const sel = "h-11 rounded-md border bg-card px-3";
 
 function Exports() {
-  const { mode, reports } = useQa();
+  const { reports } = useQa();
   const [scanner, setScanner] = useState<ScannerId | "all">("all");
   const [year, setYear] = useState("all");
   const [month, setMonth] = useState("all");
@@ -51,15 +51,6 @@ function Exports() {
     download("CTQA-Export.zip", zip, "application/zip"); setBusy(false);
     if (pdfs < list.length) toast.warning(`ZIP ready with ${pdfs} PDFs. ${list.length - pdfs} reports have no PDF open right now — click Open folder for that scanner, wait until reading finishes, then export again.`, { duration: 9000 });
     else toast.success(`ZIP ready: ${pdfs} PDFs included`);
-  }
-
-  if (mode === "demo") {
-    return (
-      <div className="mx-auto max-w-5xl">
-        <PageHeader eyebrow="Exports" title="Export QA records" />
-        <p className="text-sm text-muted-foreground">Exit demo mode to export your imported reports.</p>
-      </div>
-    );
   }
 
   return (

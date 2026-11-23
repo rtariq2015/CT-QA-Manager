@@ -28,7 +28,7 @@ export const Route = createFileRoute("/reports")({
 const ROW = 52;
 
 function Reports() {
-  const { mode, reports, addReport } = useQa();
+  const { reports, addReport } = useQa();
   const picker = useRef<HTMLInputElement>(null);
   const [reading, setReading] = useState(false);
   const [importMessage, setImportMessage] = useState("");
@@ -72,7 +72,7 @@ function Reports() {
         <input ref={picker} type="file" multiple accept="application/pdf,.pdf" className="hidden" onChange={e => void importFiles(e.target.files)} aria-label="Open local PDFs" />
       </PageHeader>
       {importMessage && <p role="status" className="mb-4 break-words text-sm">{importMessage}</p>}
-      <Calendar key={mode} reports={reports} scanner={scanner === "all" ? "flash" : scanner} onScanner={setScanner} onReport={setSelected} />
+      <Calendar reports={reports} scanner={scanner === "all" ? "flash" : scanner} onScanner={setScanner} onReport={setSelected} />
 
       <details className="mt-6 border-t pt-4">
         <summary className="cursor-pointer text-sm font-medium">Search report library</summary>
@@ -226,7 +226,7 @@ function Calendar({ reports, scanner, onScanner, onReport }: { reports: Report[]
                 {dayReports.map((r) => (
                   <li key={r.id}><Button variant="ghost" onClick={() => { close(); onReport(r); }} className="flex h-auto w-full items-center gap-2 whitespace-normal rounded-md px-2 py-3 text-left">
                     <FileText className="size-4 shrink-0" />
-                    <span className="min-w-0 flex-1"><span className="block">{r.type} · {r.time}</span><span className="block text-xs text-muted-foreground">{r.originalUrl ? "Open PDF report" : "Open report (sample — no PDF)"}</span></span>
+                    <span className="min-w-0 flex-1"><span className="block">{r.type} · {r.time}</span><span className="block text-xs text-muted-foreground">{r.originalUrl ? "Open PDF report" : "Open report details"}</span></span>
                     <Pill tone={r.printedStatus === "NOT OK" ? "bad" : r.printedStatus === "OK" ? "ok" : "muted"}>{r.printedStatus ?? "Not available"}</Pill>
                   </Button></li>
                 ))}

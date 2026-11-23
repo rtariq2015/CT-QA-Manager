@@ -7,9 +7,9 @@ import { folderRows, unmatchedFolders, normalizeConfig, SETTINGS_KEY, DEFAULT, t
 import { useQa } from "@/lib/qa-store";
 
 const EMPTY: LogEntry[] = [];
-const DEMO: Connection = { state: "demo", kind: "local", done: 0, total: 0, failed: 0, opened: [] };
+const IDLE: Connection = { state: "idle", kind: "local", done: 0, total: 0, failed: 0, opened: [] };
 export const useLog = () => useSyncExternalStore(subscribe, getLog, () => EMPTY);
-export const useConnection = () => useSyncExternalStore(subscribe, getConnection, () => DEMO);
+export const useConnection = () => useSyncExternalStore(subscribe, getConnection, () => IDLE);
 
 /** The scanner folders saved on the Settings page (the defaults until something is saved). */
 export function useConfiguredFolders(): Source[] {
