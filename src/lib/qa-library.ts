@@ -1,3 +1,4 @@
+import { log } from "./qa-logger";
 import { desktop } from "./qa-desktop";
 import { ALL_SCANNERS, type Report, type ReportType } from "./qa-data";
 
@@ -36,7 +37,7 @@ export function folderParts(r: Report): [string, string, string, string] {
 
 const archiveTypes: ReportType[] = ["Daily", "Monthly", "Other"];
 
-export async function saveArchivedReport(report: Report, data?: Uint8Array) {
+export async function saveArchivedReport(report: Report, data?: Uint8Array, original?: Report, source?: string) {
   const bridge = desktop();
   if (!bridge || report.source !== "uploaded" || (!data && !report.originalUrl)) return false;
 
@@ -50,8 +51,13 @@ export async function saveArchivedReport(report: Report, data?: Uint8Array) {
     data = new Uint8Array(await pdf.arrayBuffer());
   }
   const previous = archiveTypes.filter((type) => type !== report.type).map(relativePath);
-  const result = await bridge.saveCopy(relativePath(report.type), data, previous);
+  const result = await bridge.saveCopy(relativePath(report.type), data, previous, {
+    reportId: report.id,
+    ...(original ? { report: original } : {}),
+    ...(source ? { source } : {}),
+  });
   if (!result.ok) throw new Error(result.error ?? "Could not update the QA Library");
+  if (result.catalogError) log("warning", "folder", result.catalogError);
   return !result.existed;
 }
 

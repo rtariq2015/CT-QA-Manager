@@ -69,6 +69,19 @@ export function QaProvider({ children }: { children: ReactNode }) {
     return () => { active = false; };
   }, [addFailedImport]);
   const [localReports, setLocalReports] = useState<Report[]>([]);
+  useEffect(() => {
+    let active = true;
+    void desktop()?.listCatalog().then((saved) => {
+      if (!active || !saved.length) return;
+      setLocalReports((current) => {
+        const newer = new Set(current.map(({ id }) => id));
+        return [...current, ...saved.filter(({ id }) => !newer.has(id))]
+          .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+      });
+      log("info", "folder", `Opened ${saved.length} reports from the local catalog`);
+    }).catch(() => log("error", "folder", "Could not open the saved report catalog"));
+    return () => { active = false; };
+  }, []);
   const [history, setHistory] = useState<Filing[]>([]);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [compact, setCompact] = useState(false);

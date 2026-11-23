@@ -7,6 +7,7 @@ const { app, BrowserWindow, dialog, shell, ipcMain, protocol, safeStorage } = re
 const { execFile } = require("child_process");
 const path = require("path");
 const fs = require("fs");
+const { createCatalog, sourceFingerprint } = require("./catalog.cjs");
 const { createHash, randomUUID } = require("crypto");
 
 const CLIENT_DIR = path.join(__dirname, "..", "dist", "client");
@@ -48,6 +49,19 @@ async function serveApp(request) {
     return new Response("Bad request", { status: 400 });
   }
 
+  const saved = /^\/saved-report\/([a-f0-9]{64})\.pdf$/.exec(pathname);
+  if (saved) {
+    try {
+      const pdf = catalog.pdf(saved[1]);
+      if (!pdf) return new Response("Saved PDF unavailable", { status: 404 });
+      return new Response(await fs.promises.readFile(pdf), {
+        headers: { "content-type": "application/pdf", "cache-control": "no-store" },
+      });
+    } catch {
+      return new Response("Saved PDF unavailable", { status: 404 });
+    }
+  }
+
   if (pathname === "/") pathname = "/index.html";
   const file = path.resolve(CLIENT_DIR, `.${pathname}`);
   const relative = path.relative(CLIENT_DIR, file);
@@ -84,6 +98,11 @@ function createWindow() {
   // Open external links (help, docs) in the system browser, never inside the app window.
   win.webContents.setWindowOpenHandler(({ url: u }) => {
     if (u.startsWith("https://") || u.startsWith("http://")) void shell.openExternal(u);
+    const archived = u.startsWith(APP_URL) && /^saved-report\/([a-f0-9]{64})\.pdf$/.exec(u.slice(APP_URL.length));
+    if (archived) {
+      const pdf = catalog.pdf(archived[1]);
+      if (pdf) void shell.openPath(pdf);
+    }
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (event, targetUrl) => {
@@ -176,7 +195,7 @@ async function walkPdfs(dir, out = []) {
   }
   return out;
 }
-handleAppMessage("ctqa:readFolder", async (_e, source) => {
+handleAppMessage("ctqa:readFolder", async (_e, source, incremental = false) => {
   const p = String(source.path || "");
   let login = null;
   let loginResult = null;
@@ -191,15 +210,24 @@ handleAppMessage("ctqa:readFolder", async (_e, source) => {
     const paths = await walkPdfs(p);
     const files = [];
     const unreadableFiles = [];
+    let unchanged = 0;
     for (const file of paths) {
       const name = path.basename(file);
       try {
-        files.push({ name, data: await fs.promises.readFile(file) });
+        const before = await fs.promises.stat(file);
+        const fingerprint = sourceFingerprint(file, before);
+        if (incremental && catalog.hasSource(fingerprint)) {
+          unchanged++;
+          continue;
+        }
+        const data = await fs.promises.readFile(file);
+        const after = await fs.promises.stat(file);
+        files.push({ name, data, sourceKey: fingerprint === sourceFingerprint(file, after) ? fingerprint : undefined });
       } catch {
         unreadableFiles.push(name);
       }
     }
-    return { ok: true, files, unreadableFiles };
+    return { ok: true, files, unreadableFiles, unchanged };
   } catch (error) {
     if (error.message.startsWith("This folder contains")) {
       return { ok: false, error: error.message, diagnostic: { code: "folder-limit" }, files: [] };
@@ -219,6 +247,8 @@ handleAppMessage("ctqa:readFolder", async (_e, source) => {
 const libraryRoot = () => app.isPackaged
   ? path.join(path.dirname(process.execPath), "QA Library")
   : path.join(app.getPath("userData"), "QA Library");
+const catalog = createCatalog(libraryRoot);
+handleAppMessage("ctqa:listCatalog", () => catalog.reports(APP_URL));
 const safePart = (x) => String(x).trim().replace(/[<>:"|?*\\/]/g, "_").replace(/^\.+/, "_").trim() || "_";
 function archivePath(rel) {
   return path.join(libraryRoot(), ...rel.split("/").map(safePart));
@@ -231,7 +261,7 @@ function checkArchiveDirectory(dir) {
   }
 }
 
-function removePreviousCopies(previous, bytes) {
+function removePreviousCopies(previous, bytes, reportId) {
   for (const relative of previous) {
     const { dir, name, base } = path.parse(archivePath(relative));
     if (!fs.existsSync(dir)) continue;
@@ -241,6 +271,7 @@ function removePreviousCopies(previous, bytes) {
       if (!entry.isFile() || (entry.name !== base &&
           (!entry.name.startsWith(name) || !/^_\d+\.pdf$/i.test(suffix)))) continue;
       const file = path.join(dir, entry.name);
+      if (catalog.hasAnotherReference(file, reportId)) continue;
       if (fs.statSync(file).size === bytes.length && fs.readFileSync(file).equals(bytes)) {
         fs.unlinkSync(file);
       }
@@ -248,7 +279,7 @@ function removePreviousCopies(previous, bytes) {
   }
 }
 
-handleAppMessage("ctqa:saveCopy", (_e, rel, data, previous = []) => {
+handleAppMessage("ctqa:saveCopy", (_e, rel, data, previous = [], metadata) => {
   try {
     const destination = archivePath(rel);
     const { dir, name: stem, ext } = path.parse(destination);
@@ -256,6 +287,16 @@ handleAppMessage("ctqa:saveCopy", (_e, rel, data, previous = []) => {
     fs.mkdirSync(dir, { recursive: true });
     checkArchiveDirectory(dir);
     const buf = Buffer.from(data);
+    const remember = (target) => {
+      if (metadata) {
+        try {
+          catalog.save({ ...metadata, target, bytes: buf });
+        } catch {
+          return "PDF saved, but its catalog entry could not be updated";
+        }
+      }
+      return undefined;
+    };
     let target = destination;
     for (let suffix = 2; ; suffix++) {
       try {
@@ -266,13 +307,15 @@ handleAppMessage("ctqa:saveCopy", (_e, rel, data, previous = []) => {
       }
       const existing = fs.statSync(target);
       if (existing.isFile() && existing.size === buf.length && fs.readFileSync(target).equals(buf)) {
-        removePreviousCopies(alternatives, buf);
-        return { ok: true, path: target, existed: true };
+        const catalogError = remember(target);
+        if (!catalogError) removePreviousCopies(alternatives, buf, metadata?.reportId);
+        return { ok: true, path: target, existed: true, catalogError };
       }
       target = path.join(dir, `${stem}_${suffix}${ext}`);
     }
-    removePreviousCopies(alternatives, buf);
-    return { ok: true, path: target, existed: false };
+    const catalogError = remember(target);
+    if (!catalogError) removePreviousCopies(alternatives, buf, metadata?.reportId);
+    return { ok: true, path: target, existed: false, catalogError };
   } catch (err) { return { ok: false, error: String(err && err.message || err) }; }
 });
 const inbox = () => path.join(libraryRoot(), "Review Inbox");

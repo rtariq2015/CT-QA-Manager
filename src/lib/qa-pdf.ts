@@ -21,6 +21,7 @@ export async function importQaPdf(
   file: File,
   addReport: (report: Report) => Report,
   addFailedImport: (failure: FailedImport) => void,
+  sourceKey?: string,
 ): Promise<PdfImportResult> {
   const start = performance.now();
   const bridge = desktop();
@@ -53,7 +54,7 @@ export async function importQaPdf(
   if (!bridge) return { ...result, saved: false };
 
   try {
-    const saved = await saveArchivedReport(filed, new Uint8Array(bytes));
+    const saved = await saveArchivedReport(filed, new Uint8Array(bytes), parsed, sourceKey);
     return { ...result, saved };
   } catch (err) {
     const archiveError = err instanceof Error ? err.message : String(err);

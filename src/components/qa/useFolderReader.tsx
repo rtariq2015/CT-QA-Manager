@@ -6,6 +6,8 @@ import { useQa } from "@/lib/qa-store";
 import { startScan } from "@/lib/qa-scan-log";
 import { log, markFolderOpened, setConnection } from "@/lib/qa-logger";
 
+type SourcePdf = File & { sourceKey?: string };
+
 type DirHandle = { kind: "directory"; name: string; values(): AsyncIterable<DirHandle | FileHandle>; getDirectoryHandle(n: string, o?: { create: boolean }): Promise<DirHandle>; getFileHandle(n: string, o?: { create: boolean }): Promise<FileHandle> };
 type FileHandle = { kind: "file"; name: string; getFile(): Promise<File>; createWritable(): Promise<{ write(d: Blob): Promise<void>; close(): Promise<void> }> };
 type Picker = (o?: { mode?: "read" | "readwrite"; startIn?: "desktop" }) => Promise<DirHandle>;
@@ -31,45 +33,45 @@ export function useFolderReader(onDone?: () => void, autoConnect = false) {
   const scanning = useRef(false);
   const input = useRef<HTMLInputElement>(null);
 
-  async function readFiles(files: AsyncIterable<File> | File[], folder: string, kind: "local" | "network" = "local", sourceReadMs = 0, configuredFolder?: number, unreadableFiles: string[] = []) {
-    const scan = startScan(kind, sourceReadMs, configuredFolder);
+  async function readFiles(files: AsyncIterable<SourcePdf> | SourcePdf[], folder: string, kind: "local" | "network" = "local", sourceReadMs = 0, configuredFolder?: number, unreadableFiles: string[] = [], unchanged = 0) {
+    const scan = startScan(kind, sourceReadMs, configuredFolder, unchanged);
     const { importQaPdf } = await import("@/lib/qa-pdf");
-    const list: File[] = [];
+    const list: SourcePdf[] = [];
     try {
       for await (const file of files) list.push(file);
     } catch (error) {
       scan.finish(list.length, { code: "folder-enumeration-failed" });
       throw error;
     }
-    const total = list.length + unreadableFiles.length;
+    const total = list.length + unreadableFiles.length + unchanged;
     for (const [index, name] of unreadableFiles.entries()) {
       addFailedImport({ id: JSON.stringify([configuredFolder, name, index]), fileName: name, code: "pdf-read-failed", at: new Date().toISOString(), archived: false });
       scan.recordFailure(new Error("PDF source could not be read"));
       log("error", "file", `Could not open ${name} from the source folder`);
     }
     log("info", "folder", `Opened folder "${folder}" (${kind}): ${total} PDFs found`);
-    setConnection({ state: "reading", kind, folder, done: unreadableFiles.length, total, failed: unreadableFiles.length, at: new Date().toISOString() });
+    setConnection({ state: "reading", kind, folder, done: unreadableFiles.length + unchanged, total, failed: unreadableFiles.length, at: new Date().toISOString() });
     let ok = 0, bad = unreadableFiles.length, saved = 0, unsaved = 0;
     const d = desktop();
     for (const file of list) {
       setBusy(`Reading ${file.name}…`);
       try {
-        const result = await importQaPdf(file, addReport, addFailedImport);
+        const result = await importQaPdf(file, addReport, addFailedImport, file.sourceKey);
         scan.recordRead(result);
         ok++;
         if (result.saved) saved++;
         if (result.archiveError) unsaved++;
       } catch (error) { scan.recordFailure(error); bad++; }
-      setConnection({ done: ok + bad, failed: bad });
+      setConnection({ done: ok + bad + unchanged, failed: bad });
     }
     setConnection({ state: "ready" });
     const summary = scan.finish(total);
-    markFolderOpened(folder, kind, ok);
-    log(bad || unsaved ? "warning" : "success", "folder", `Finished "${folder}": ${ok} read, ${bad} failed, ${summary.queuedForReview} for review, ${summary.cached} cached, ${saved} saved, ${unsaved} archive failures, ${summary.durationMs} ms total`);
+    markFolderOpened(folder, kind, ok + unchanged);
+    log(bad || unsaved ? "warning" : "success", "folder", `Finished "${folder}": ${ok} read, ${unchanged} unchanged, ${bad} failed, ${summary.queuedForReview} for review, ${summary.cached} cached, ${saved} saved, ${unsaved} archive failures, ${summary.durationMs} ms total`);
     setBusy(null);
     const message = `${ok} reports read${d ? ` · ${saved} new PDFs saved to QA Library` : ""}${bad ? ` · ${bad} could not be read` : ""}${unsaved ? ` · ${unsaved} copies could not be saved` : ""}`;
     if (bad || unsaved) toast.warning(message);
-    else toast.success(message);
+    else if (ok || !unchanged) toast.success(message);
     onDone?.();
   }
 
@@ -87,7 +89,7 @@ export function useFolderReader(onDone?: () => void, autoConnect = false) {
         setBusy(`Connecting ${s.name}…`);
         const connectionStart = performance.now();
         const kind = kindOf(s);
-        const res = await d.readFolder({ ...s, kind });
+        const res = await d.readFolder({ ...s, kind }, true);
         const sourceReadMs = Math.round(performance.now() - connectionStart);
         if (!res.ok) {
           const issue = res.diagnostic ?? { code: "folder-unavailable" };
@@ -97,8 +99,11 @@ export function useFolderReader(onDone?: () => void, autoConnect = false) {
           toast.error(message);
           continue;
         }
-        const files = res.files.map((f) => new File([f.data as BlobPart], f.name, { type: "application/pdf" }));
-        await readFiles(files, s.path.split(/[\\/]/).filter(Boolean).pop() ?? s.name, kind, sourceReadMs, index + 1, res.unreadableFiles);
+        const files = res.files.map((f) => Object.assign(
+          new File([f.data as BlobPart], f.name, { type: "application/pdf" }),
+          f.sourceKey ? { sourceKey: f.sourceKey } : {},
+        ));
+        await readFiles(files, s.path.split(/[\\/]/).filter(Boolean).pop() ?? s.name, kind, sourceReadMs, index + 1, res.unreadableFiles, res.unchanged);
       }
     } finally {
       scanning.current = false;

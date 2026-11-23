@@ -14,6 +14,7 @@ export interface ScanSummary {
   durationMs: number;
   sourceReadMs: number;
   found: number;
+  unchanged?: number;
   read: number;
   failed: number;
   cached: number;
@@ -45,13 +46,14 @@ export function clearScanHistory() {
   try { localStorage.removeItem(SCAN_HISTORY_KEY); } catch { /* storage unavailable */ }
 }
 
-export function startScan(source: ScanSummary["source"], sourceReadMs = 0, configuredFolder?: number) {
+export function startScan(source: ScanSummary["source"], sourceReadMs = 0, configuredFolder?: number, unchanged = 0) {
   const start = performance.now();
   const timings: number[] = [];
   const summary: ScanSummary = {
     at: new Date().toISOString(), source, sourceReadMs, durationMs: 0, found: 0, read: 0,
     failed: 0, cached: 0, queuedForReview: 0, printedNotOk: 0, saved: 0, archiveFailed: 0,
     readTimingMs: null, readErrors: {}, reviewReasons: {}, reportsByScanner: {},
+    ...(unchanged ? { unchanged } : {}),
     ...(configuredFolder === undefined ? {} : { configuredFolder }),
   };
   return {

@@ -43,6 +43,12 @@ The parser supports older Siemens syngo VB PDFs and syngo VA40A reports, includi
 
 The desktop app works offline with local PDFs. Windows protects saved network credentials, and backups include filing decisions and settings. The report library starts empty until you import PDFs or connect a scanner folder.
 
+## Reopen saved reports
+
+The Windows app stores a local report catalog with the PDFs in **QA Library**. At startup, Reports, Review and Trends can reopen saved records without reading the scanner PDFs again. Configured folders are checked in the background and unchanged, indexed PDFs are skipped.
+
+The first scan after upgrading from an earlier version builds the catalog. Older PDFs whose source folders are unavailable can be imported from a saved copy.
+
 ## Review import issues
 
 If a PDF cannot be parsed, open **Review → Import issues** to see the reason and original PDF. Windows keeps a copy in **QA Library → Review Inbox**, so you can reopen it after restarting. **Mark reviewed** clears the item from the inbox while retaining the copy. The web workspace keeps originals for the current session.
