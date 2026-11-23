@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSettingsJson, kindOf, normalizeConfig, folderMatches, folderRows, unmatchedFolders, DEFAULT, type Config, type OpenedFolder, type Source } from "./qa-settings";
+import { buildSettingsJson, parseSettingsJson, kindOf, normalizeConfig, folderMatches, folderRows, unmatchedFolders, DEFAULT, type Config, type OpenedFolder, type Source } from "./qa-settings";
 
 const cfg = (sources: Source[]): Config => ({ ...DEFAULT, sources });
 const parse = (text: string) => JSON.parse(text) as {
@@ -40,7 +40,7 @@ describe("buildSettingsJson", () => {
 
 describe("normalizeConfig", () => {
   it("keeps the picked folder type and username through a round trip", () => {
-    const back = normalizeConfig(JSON.parse(buildSettingsJson(DEFAULT)));
+    const back = parseSettingsJson(buildSettingsJson(DEFAULT));
     expect(back.sources.map((s) => s.kind)).toEqual(["network", "network", "network", "local"]);
     expect(back.sources[3]).toMatchObject({ name: "CT Xcite", path: "E:\\EXCITE-ED" });
   });
@@ -89,4 +89,12 @@ describe("folder connection status", () => {
     expect(unmatchedFolders([xcite, edge], [opened("EXCITE-ED"), loose])).toEqual([loose]);
     expect(unmatchedFolders([xcite, edge], [opened("EXCITE-ED")])).toEqual([]);
   });
+});
+
+
+it("reads a copied Windows settings file and rejects an invalid replacement", () => {
+  const original = cfg([{ name: "CT Edge", path: "\\\\server\\QA", user: "HOSPITAL\\qa", kind: "network" }]);
+  expect(parseSettingsJson("\uFEFF" + buildSettingsJson(original))).toEqual(original);
+  expect(() => parseSettingsJson('{"Sources":[]}')).toThrow("Invalid QA schedule");
+  expect(() => parseSettingsJson(buildSettingsJson(cfg([{ name: "", path: "C:/QA", kind: "local" }])))).toThrow("Invalid scanner");
 });

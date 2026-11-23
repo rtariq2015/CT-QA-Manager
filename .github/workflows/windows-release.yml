@@ -41,6 +41,33 @@ jobs:
             throw "Windows package is incomplete."
           }
           Compress-Archive -LiteralPath $folder -DestinationPath $zip
-          "$((Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant())  $zip" | Set-Content -Encoding ascii SHA256SUMS.txt
-          gh release upload $env:RELEASE_TAG $zip SHA256SUMS.txt
+          $patch = "CT-QA-Manager-Update-x64.zip"
+          $staging = "electron-release/CT QA Manager Update"
+          New-Item -ItemType Directory -Path $staging | Out-Null
+          Copy-Item -LiteralPath "$folder/resources/app" -Recurse -Destination "$staging/app"
+          Copy-Item -LiteralPath "scripts/Apply-Update.cmd","scripts/Update-CT-QA-Manager.ps1" -Destination $staging
+          $runtime = (Get-Content "$folder/version" -Raw).Trim()
+          $app = Get-Content "$folder/resources/app/package.json" -Raw | ConvertFrom-Json
+          @{ electronVersion = $runtime; appVersion = $app.version } | ConvertTo-Json | Set-Content -Encoding ascii "$staging/update.json"
+          $testRoot = Join-Path $env:RUNNER_TEMP "CTQA update test"
+          New-Item -ItemType Directory -Path "$testRoot/resources", "$testRoot/QA Library" | Out-Null
+          Copy-Item "$folder/CT QA Manager.exe","$folder/version" -Destination $testRoot
+          Copy-Item "$folder/resources/app" -Recurse -Destination "$testRoot/resources/app"
+          $oldPath = "$testRoot/resources/app/package.json"
+          $old = Get-Content $oldPath -Raw | ConvertFrom-Json
+          $old.version = "5.8.2"
+          $old | ConvertTo-Json -Depth 20 | Set-Content -Encoding ascii $oldPath
+          Set-Content "$testRoot/Settings.json" "test settings"
+          Set-Content "$testRoot/QA Library/keep.txt" "test archive"
+          & "$staging/Update-CT-QA-Manager.ps1" -ProgramFolder $testRoot
+          $installed = Get-Content $oldPath -Raw | ConvertFrom-Json
+          if ($installed.version -ne $app.version -or (Get-Content "$testRoot/Settings.json") -ne "test settings" -or
+              (Get-Content "$testRoot/QA Library/keep.txt") -ne "test archive" -or !(Get-ChildItem "$testRoot/resources" -Filter "app-backup-*")) {
+            throw "The Windows updater did not preserve the app backup or local files."
+          }
+          Compress-Archive -LiteralPath $staging -DestinationPath $patch
+          foreach ($asset in @($zip, $patch)) {
+            "$((Get-FileHash -Algorithm SHA256 $asset).Hash.ToLowerInvariant())  $asset" | Add-Content -Encoding ascii SHA256SUMS.txt
+          }
+          gh release upload $env:RELEASE_TAG $zip $patch SHA256SUMS.txt
           if ($LASTEXITCODE -ne 0) { throw "Upload failed." }

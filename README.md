@@ -14,6 +14,18 @@
 
 Use **Saved PDFs** to open the **QA Library** next to the program. Keep the full program folder together when copying to another computer or USB drive. Before upgrading, keep a copy of your QA Library and export a settings and filing backup.
 
+## Update an existing Windows copy
+
+1. Close CT QA Manager and extract the [smaller Windows Update ZIP](https://github.com/rtariq2015/CT-QA-Manager/releases/latest/download/CT-QA-Manager-Update-x64.zip).
+2. Double-click **Apply-Update.cmd** and paste the path of the folder containing **CT QA Manager.exe**.
+3. Open the program again. The update replaces the app files and keeps the previous app files as a backup.
+
+The updater checks the installed Electron version. Use the full Windows ZIP if the runtime changes.
+
+## Copy scanner settings
+
+Click **Save** in Windows Settings to write **Settings.json** beside the executable. Copy it beside the executable in another copy before launching, or use **Settings → Scanner folders → Import Settings.json**. The file contains folder paths, usernames and scheduling preferences. Passwords stay encrypted on the original PC and may need to be entered again on another Windows account or computer.
+
 ## Workspaces
 
 | Workspace | What you can do |

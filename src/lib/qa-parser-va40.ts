@@ -1,3 +1,4 @@
+import { distinctMeasurements, validReportTimestamp } from "./qa-parser-validation";
 import { type Measurement, type MetricId, type Report } from "./qa-data";
 import type { PdfTextPage, PrintedSection, PrintedStatus } from "./qa-parser";
 
@@ -14,6 +15,7 @@ export const isVa40 = (all: string) => /\|\s*SOMATOM X\.cite\s*\|/.test(all) || 
 
 function iso(m: string, d: string, y: string) { return `${y}-${m}-${d}`; }
 function time24(h: string, mi: string, s: string, ap: string) {
+  if (Number(h) < 1 || Number(h) > 12) return "";
   let n = Number(h) % 12; if (ap === "PM") n += 12;
   return `${String(n).padStart(2, "0")}:${mi}:${s}`;
 }
@@ -53,6 +55,8 @@ export function parseVa40Pages(pages: PdfTextPage[], filename: string, sizeKb: n
     if (!f) throw new Error("Report date could not be read. This PDF needs manual review.");
     stamp = { date: iso(f[1]!, f[2]!, f[3]!), time: time24(f[4]!, f[5]!, f[6]!, f[7]!) };
   }
+
+  if (!validReportTimestamp(stamp.date, stamp.time)) throw new Error("Report date or time could not be read. This PDF needs manual review.");
 
   const measurements: Measurement[] = [];
   let extractionIncomplete = false;
@@ -139,7 +143,7 @@ export function parseVa40Pages(pages: PdfTextPage[], filename: string, sizeKb: n
     }
   }
   // Centre water values repeat in the homogeneity table: keep one per mode/slice.
-  const unique = measurements.filter((m, i, ms) => ms.findIndex(x => x.metric === m.metric && x.context === m.context) === i);
+  const unique = distinctMeasurements(measurements, true);
   const printedStatus: PrintedStatus = sections.some(s => s.status === "NOT OK") ? "NOT OK" : sections.length ? "OK" : "Not available";
   const labels = sections.map(s => s.label);
   const daily = sections.length === 2 && labels.includes("Noise") && labels.includes("Homogeneity");

@@ -40,8 +40,10 @@ function Trends() {
   const context = contexts.includes(ctxPick) ? ctxPick : (contexts.find((c) => c.startsWith("120")) ?? contexts[0] ?? "");
 
   const points = useMemo(() => {
-    const since = reports[0] ? new Date(new Date(reports[0].date).getTime() - range * 864e5).toISOString().slice(0, 10) : "";
-    return reports.filter((r) => r.scanner === scanner && r.date >= since && r.type !== "Other")
+    const filed = reports.filter((r) => r.scanner === scanner && r.type !== "Other");
+    const newest = filed[0];
+    const since = newest ? new Date(new Date(newest.date).getTime() - range * 864e5).toISOString().slice(0, 10) : "";
+    return filed.filter((r) => r.date >= since)
       .flatMap((r) => r.measurements.filter((m) => m.metric === metric && m.context === context).map((m) => ({ ...m, date: r.date, r })))
       .reverse();
   }, [reports, scanner, metric, context, range]);

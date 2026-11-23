@@ -108,6 +108,28 @@ function handleAppMessage(channel, handler) {
   });
 }
 
+const settingsPath = () => path.join(app.isPackaged ? path.dirname(process.execPath) : app.getPath("userData"), "Settings.json");
+
+handleAppMessage("ctqa:readSettings", () => {
+  try {
+    return fs.readFileSync(settingsPath(), "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+});
+
+handleAppMessage("ctqa:saveSettings", (_event, json) => {
+  const file = settingsPath();
+  const temporary = `${file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(temporary, json, "utf8");
+    fs.renameSync(temporary, file);
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
+});
+
 // ---- Network logins: encrypted with Windows (DPAPI via safeStorage), never stored in plain text.
 const loginFile = () => path.join(app.getPath("userData"), "logins.json");
 function readLogins() { try { return JSON.parse(fs.readFileSync(loginFile(), "utf8")); } catch { return {}; } }
@@ -142,12 +164,12 @@ function netUse(root, login) {
     });
   });
 }
-function walkPdfs(dir, out = []) {
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+async function walkPdfs(dir, out = []) {
+  for (const e of await fs.promises.readdir(dir, { withFileTypes: true })) {
     const full = path.join(dir, e.name);
-    if (e.isDirectory()) walkPdfs(full, out);
+    if (e.isDirectory()) await walkPdfs(full, out);
     else if (e.name.toLowerCase().endsWith(".pdf")) out.push(full);
-    if (out.length > 5000) break;
+    if (out.length > 5000) throw new Error("This folder contains more than 5,000 PDFs. Select a scanner or date subfolder.");
   }
   return out;
 }
@@ -160,9 +182,13 @@ handleAppMessage("ctqa:readFolder", async (_e, source) => {
     if (r.startsWith("failed")) return { ok: false, error: `Login failed for ${source.name}. Check the username and password.`, files: [] };
   }
   try {
-    const files = walkPdfs(p).map((f) => ({ name: path.basename(f), data: fs.readFileSync(f) }));
+    const files = [];
+    for (const file of await walkPdfs(p)) {
+      files.push({ name: path.basename(file), data: await fs.promises.readFile(file) });
+    }
     return { ok: true, files };
-  } catch {
+  } catch (error) {
+    if (error.message.startsWith("This folder contains")) return { ok: false, error: error.message, files: [] };
     return { ok: false, error: `Cannot reach ${p}${login ? "" : source.kind === "network" ? " (no saved password)" : ""}`, files: [] };
   }
 });

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { desktop } from "@/lib/qa-desktop";
-import { normalizeConfig, SETTINGS_KEY, kindOf } from "@/lib/qa-settings";
+import { normalizeConfig, parseSettingsJson, SETTINGS_KEY, kindOf } from "@/lib/qa-settings";
 import { toast } from "sonner";
 import { useQa } from "@/lib/qa-store";
 import { log, markFolderOpened, setConnection } from "@/lib/qa-logger";
@@ -27,6 +27,7 @@ async function* walk(dir: DirHandle): AsyncGenerator<File> {
 export function useFolderReader(onDone?: () => void, autoConnect = false) {
   const { addReport } = useQa();
   const [busy, setBusy] = useState<string | null>(null);
+  const scanning = useRef(false);
   const input = useRef<HTMLInputElement>(null);
 
   async function readFiles(files: AsyncIterable<File> | File[], folder: string, kind: "local" | "network" = "local") {
@@ -63,22 +64,63 @@ export function useFolderReader(onDone?: () => void, autoConnect = false) {
     const saved = localStorage.getItem(SETTINGS_KEY);
     if (!saved) return;
     let cfg; try { cfg = normalizeConfig(JSON.parse(saved) as unknown); } catch { return; }
-    for (const s of cfg.sources) {
-      if (!s.path || s.path === "\\\\") continue;
-      setBusy(`Connecting ${s.name}…`);
-      const res = await d.readFolder({ ...s, kind: kindOf(s) });
-      if (!res.ok) { log("error", "folder", res.error ?? `Could not connect ${s.name}`); toast.error(res.error ?? `Could not connect ${s.name}`); continue; }
-      const files = res.files.map((f) => new File([f.data as BlobPart], f.name, { type: "application/pdf" }));
-      await readFiles(files, s.path.split(/[\\/]/).filter(Boolean).pop() ?? s.name, kindOf(s));
+    if (scanning.current) return;
+    scanning.current = true;
+    try {
+      for (const s of cfg.sources) {
+        if (!s.path || s.path === "\\\\") continue;
+        setBusy(`Connecting ${s.name}…`);
+        const res = await d.readFolder({ ...s, kind: kindOf(s) });
+        if (!res.ok) { log("error", "folder", res.error ?? `Could not connect ${s.name}`); toast.error(res.error ?? `Could not connect ${s.name}`); continue; }
+        const files = res.files.map((f) => new File([f.data as BlobPart], f.name, { type: "application/pdf" }));
+        await readFiles(files, s.path.split(/[\\/]/).filter(Boolean).pop() ?? s.name, kindOf(s));
+      }
+    } finally {
+      scanning.current = false;
+      setBusy(null);
     }
-    setBusy(null);
   }
   useEffect(() => {
     if (!autoConnect) return;
-    void connectAll();
-    const again = () => void connectAll();
+    let active = true;
+    const loadSettings = async () => {
+      try {
+        const text = await desktop()?.readSettings();
+        if (!active) return;
+        if (text) {
+          const config = parseSettingsJson(text);
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(config));
+          window.dispatchEvent(new Event("ctqa:settings"));
+        }
+        await connectAll();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not load Settings.json";
+        log("error", "settings", message);
+        toast.error(message);
+      }
+    };
+    let timer: number | undefined;
+    const again = () => {
+      void connectAll().catch((error) => toast.error(String(error)));
+    };
+    const schedule = () => {
+      window.clearInterval(timer);
+      const saved = localStorage.getItem(SETTINGS_KEY);
+      if (!saved || !desktop()) return;
+      try {
+        const { sync } = normalizeConfig(JSON.parse(saved));
+        if (sync !== "launch") timer = window.setInterval(again, Number(sync) * 60_000);
+      } catch { /* leave a malformed schedule inactive */ }
+    };
+    void loadSettings().then(() => { if (active) schedule(); });
     window.addEventListener("ctqa:reconnect", again);
-    return () => window.removeEventListener("ctqa:reconnect", again);
+    window.addEventListener("ctqa:settings", schedule);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener("ctqa:reconnect", again);
+      window.removeEventListener("ctqa:settings", schedule);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

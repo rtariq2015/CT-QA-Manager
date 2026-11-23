@@ -47,10 +47,16 @@ function Exports() {
   const withPdf = list.filter((r) => r.originalUrl).length;
   async function zip() {
     setBusy(true);
-    const { zip, pdfs } = await buildZip(list, title);
-    download("CTQA-Export.zip", zip, "application/zip"); setBusy(false);
-    if (pdfs < list.length) toast.warning(`ZIP ready with ${pdfs} PDFs. ${list.length - pdfs} reports have no PDF open right now — click Open folder for that scanner, wait until reading finishes, then export again.`, { duration: 9000 });
-    else toast.success(`ZIP ready: ${pdfs} PDFs included`);
+    try {
+      const { zip, pdfs } = await buildZip(list, title);
+      download("CTQA-Export.zip", zip, "application/zip");
+      if (pdfs < list.length) toast.warning(`ZIP ready with ${pdfs} PDFs. Open missing source PDFs from Folders before exporting again.`);
+      else toast.success(`ZIP ready: ${pdfs} PDFs included`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not build the ZIP");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

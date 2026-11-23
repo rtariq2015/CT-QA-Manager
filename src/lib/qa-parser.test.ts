@@ -89,3 +89,14 @@ describe("Siemens printed report rules", () => {
     expect(report.measurements.find(m => m.tube === "B")).toMatchObject({ metric: "noise", value: 3.97, lower: 3.54, upper: 4.32, kernel: "Br38f", baseline: null });
   });
 });
+
+
+it("rejects an impossible printed date", () => {
+  expect(() => parseSiemensPages([{ page: 1, lines: ["Product Name SOMATOM Drive", "2026-02-31 08:00:00"] }], "invalid.pdf", 1)).toThrow("Report date");
+});
+
+it("keeps a conflicting duplicate reading so it can still be flagged", () => {
+  const report = read(["1. Quality Daily Noise", "Results for System A", "Slice 1 3.1 HU 2.5 ... 4.4 HU", "Slice 1 6.1 HU 2.5 ... 4.4 HU"]);
+  expect(report.measurements.map((m) => m.value)).toEqual([3.1, 6.1]);
+  expect(report.measurements.some(isOutOfLimit)).toBe(true);
+});

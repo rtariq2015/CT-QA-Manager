@@ -1,3 +1,4 @@
+import { distinctMeasurements, validReportTimestamp } from "./qa-parser-validation";
 import { type Measurement, type MetricId, type Report, type ScannerId } from "./qa-data";
 import { isVa40, parseVa40Pages } from "./qa-parser-va40";
 
@@ -19,7 +20,7 @@ export function parseSiemensPages(pages: PdfTextPage[], filename: string, sizeKb
   const scanner: ScannerId | undefined = model?.includes("Drive") ? "drive" : model?.includes("Flash") ? "flash" : model?.includes("Edge") ? "edge" : model?.includes("X.cite") ? "xcite" : undefined;
   if (!scanner) throw new Error("Scanner identity could not be matched. This PDF needs manual review.");
   const stamp = /(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}(?::\d{2})?)/.exec(all);
-  if (!stamp?.[1] || !stamp[2]) throw new Error("Report date could not be read. This PDF needs manual review.");
+  if (!stamp?.[1] || !stamp[2] || !validReportTimestamp(stamp[1], stamp[2])) throw new Error("Report date could not be read. This PDF needs manual review.");
   const sections: PrintedSection[] = [];
   for (const p of pages) for (const raw of p.lines) {
     const m = /^\s*\d+\.\s*Quality (?:Daily|IEC Constancy|IEC Acceptance)\s+(.+?)\s+(NOT\s+OK|OK)\s*[.\s]*(\d+)\s*$/.exec(raw);
@@ -120,7 +121,7 @@ export function parseSiemensPages(pages: PdfTextPage[], filename: string, sizeKb
     }
   }
   // Central water values are also present in the homogeneity table: retain one reading.
-  const unique = measurements.filter((m, i, ms) => ms.findIndex(x => x.page === m.page && x.metric === m.metric && x.context === m.context) === i);
+  const unique = distinctMeasurements(measurements);
   const printedStatus: PrintedStatus = sections.some(s => s.status === "NOT OK") ? "NOT OK" : sections.length ? "OK" : "Not available";
   // Flash daily checks can be printed as IEC Constancy: identify the exact
   // noise + homogeneity/water summary, not the filename or archive folder.

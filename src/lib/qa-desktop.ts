@@ -2,6 +2,8 @@
 import type { Source } from "./qa-settings";
 
 export interface DesktopBridge {
+  readSettings(): Promise<string | null>;
+  saveSettings(json: string): Promise<void>;
   saveLogin(name: string, user: string, password: string): Promise<boolean>;
   renameLogin(from: string, to: string): Promise<boolean>;
   hasLogin(name: string): Promise<boolean>;

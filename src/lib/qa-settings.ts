@@ -109,3 +109,23 @@ export function normalizeConfig(raw: unknown): Config {
   const sync = SYNC.includes(String(c.sync)) ? (c.sync as Config["sync"]) : DEFAULT.sync;
   return { sources, dueDay, days, sync };
 }
+
+/** Read Settings.json, including files exported by earlier versions. */
+export function parseSettingsJson(text: string): Config {
+  const raw = JSON.parse(text.trim()) as Record<string, unknown> | null;
+  if (!raw || !Array.isArray(raw["Sources"])) throw new Error("Settings.json must contain a Sources list");
+  const sources: Source[] = raw["Sources"].map((entry: unknown) => {
+    if (!entry || typeof entry !== "object") throw new Error("Invalid scanner folder in Settings.json");
+    const { Name, Path, Type, Username } = entry as Record<string, unknown>;
+    if (typeof Name !== "string" || !Name.trim() || typeof Path !== "string" ||
+        (Type !== "Network" && Type !== "Local")) throw new Error("Invalid scanner name, path, or type in Settings.json");
+    const kind = Type === "Network" ? "network" : "local";
+    return { name: Name, path: Path, kind, ...(kind === "network" && typeof Username === "string" && Username ? { user: Username } : {}) };
+  });
+  if (typeof raw["MonthlyDueDay"] !== "number" || !Number.isInteger(raw["MonthlyDueDay"]) ||
+      raw["MonthlyDueDay"] < 1 || raw["MonthlyDueDay"] > 28 ||
+      !DAYS.includes(String(raw["DailySchedule"])) || !SYNC.includes(String(raw["SyncMinutes"]))) {
+    throw new Error("Invalid QA schedule in Settings.json");
+  }
+  return normalizeConfig({ sources, dueDay: raw["MonthlyDueDay"], days: raw["DailySchedule"], sync: raw["SyncMinutes"] });
+}

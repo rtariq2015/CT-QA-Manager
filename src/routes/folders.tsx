@@ -40,22 +40,42 @@ function Folders() {
     const p = picker();
     const local = reports.filter((r) => r.originalUrl);
     if (!local.length) { toast.error("Open a folder of reports first."); return; }
-    if (!p) {
-      setBusy("Building ZIP…");
-      const { zip } = await buildZip(local, "QA Library"); download("QA-Library.zip", zip, "application/zip"); log("success", "folder", `Saved QA-Library.zip (${local.length} reports)`); setBusy(null); return;
-    }
     try {
+      if (!p) {
+        setBusy("Building ZIP…");
+        const { zip } = await buildZip(local, "QA Library");
+        download("QA-Library.zip", zip, "application/zip");
+        log("success", "folder", `Saved QA-Library.zip (${local.length} reports)`);
+        return;
+      }
       const root = await p({ mode: "readwrite" });
       const paths = savedPaths(local);
       for (const r of local) {
         setBusy(`Copying ${r.fileName}…`);
         const parts = (paths.get(r.id) ?? [...folderParts(r), r.fileName].join("/")).split("/"); const name = parts.pop()!;
         let d = root; for (const part of parts) d = await d.getDirectoryHandle(part, { create: true });
-        const w = await (await d.getFileHandle(name, { create: true })).createWritable();
-        await w.write(await (await fetch(r.originalUrl!)).blob()); await w.close();
+        const response = await fetch(r.originalUrl!);
+        if (!response.ok) throw new Error(`Could not read ${r.fileName}`);
+        const pdf = await response.blob();
+        let candidate = name;
+        for (let suffix = 2; ; suffix++) {
+          try { await d.getFileHandle(candidate); }
+          catch (error) {
+            if (error instanceof DOMException && error.name === "NotFoundError") break;
+            throw error;
+          }
+          candidate = name.replace(/\.pdf$/i, `_${suffix}.pdf`);
+        }
+        const writer = await (await d.getFileHandle(candidate, { create: true })).createWritable();
+        await writer.write(pdf);
+        await writer.close();
       }
       toast.success(`${local.length} reports copied into organized folders`); log("success", "folder", `Saved organized copy: ${local.length} reports into "${root.name}"`);
-    } catch { /* cancelled */ } finally { setBusy(null); }
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        toast.error(error instanceof Error ? error.message : "Could not save organized PDFs");
+      }
+    } finally { setBusy(null); }
   }
 
   return (

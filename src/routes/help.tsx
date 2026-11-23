@@ -18,10 +18,10 @@ export const Route = createFileRoute("/help")({
 
 const FAQ: [string, string][] = [
   ["What does “Filed as Daily/Monthly/Other” mean?", "It only says where a report is stored. It is not a clinical sign-off. A printed NOT OK always stays visible after filing."],
-  ["How is Daily vs Monthly decided?", "From the words printed inside the PDF (Quality Daily, IEC Constancy, test list), never the file name or folder. You confirm it on the Review page."],
-  ["Why is “Monthly” set by the department?", "Siemens prints constancy tests; which ones count as the monthly set is your department's schedule (due day in Settings)."],
+  ["How is Daily vs Monthly decided?", "From the words printed inside the PDF (Quality Daily, IEC Constancy, test list), never the file name or folder. Review shows reports that need a filing decision."],
+  ["Why is “Monthly” set by the department?", "Monthly groups supported checks from filed Monthly PDFs. You can set the due day in Settings."],
   ["One month, several PDFs?", "Yes. Monthly tests can be spread over several PDFs. The Monthly page combines them per scanner."],
-  ["Are reports uploaded anywhere?", "No. PDFs you open are read inside this browser tab and disappear when it is closed."],
+  ["Are reports uploaded anywhere?", "The app reads PDFs on this computer. The Windows app keeps a copy in the QA Library next to the program."],
 ];
 
 function Help() {
