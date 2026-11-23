@@ -1,11 +1,13 @@
 import { FailedImports } from "@/components/qa/FailedImports";
 import { tidyFileName } from "@/lib/qa-library";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { createFileRoute } from "@tanstack/react-router";
 import { Undo2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { ReportType } from "@/lib/qa-data";
+import { SCANNERS, type ReportType, type ScannerId } from "@/lib/qa-data";
+import { matchingReviewReports, reviewMatchKey } from "@/lib/qa-review-matching";
 import { useQa } from "@/lib/qa-store";
 import { reviewAction, reviewReason } from "@/lib/qa-triage";
 import { PageHeader, Pill, ScannerLabel, fmtDate } from "@/components/qa/ui";
@@ -31,7 +33,16 @@ const CHOICES: { type: ReportType; key: string }[] = [
 ];
 
 function Review() {
-  const { pending, failedImports, file, undo, filingBusy, lastFiling } = useQa();
+  const { pending, failedImports, file, fileMatching, undo, filingBusy, lastFiling } = useQa();
+  const [scanner, setScanner] = useState<ScannerId | "all">("all");
+  const scoped = useMemo(() => scanner === "all" ? pending : pending.filter((r) => r.scanner === scanner), [pending, scanner]);
+  const counts = useMemo(() => {
+    const totals: Partial<Record<ScannerId, number>> = {};
+    for (const report of pending) totals[report.scanner] = (totals[report.scanner] ?? 0) + 1;
+    return totals;
+  }, [pending]);
+  const [batch, setBatch] = useState<{ ids: string[]; key: string; names: string[]; tests: string[] }>();
+  const [batchType, setBatchType] = useState<ReportType | "">("");
   const [view, setView] = useState<"filing" | "failed">();
   const active = view ?? (pending.length || !failedImports.length ? "filing" : "failed");
   const selection = (
@@ -41,13 +52,24 @@ function Review() {
     </div>
   );
   const [currentId, setCurrentId] = useState<string | undefined>(undefined);
-  const current = pending.find((r) => r.id === currentId) ?? pending[0];
+  const current = scoped.find((r) => r.id === currentId) ?? scoped[0];
+  const matching = useMemo(() => current ? matchingReviewReports(current, scoped) : [], [current, scoped]);
+  const filter = pending.length > 0 && (
+    <label className="mb-4 flex w-fit items-center gap-3 text-sm font-medium">
+      Scanner
+      <select value={scanner} className="h-10 rounded-md border bg-card px-3 text-sm"
+        onChange={(event) => { setScanner(event.target.value as ScannerId | "all"); setCurrentId(undefined); }}>
+        <option value="all">All scanners ({pending.length})</option>
+        {SCANNERS.map((s) => <option value={s.id} key={s.id}>{s.name} ({counts[s.id] ?? 0})</option>)}
+      </select>
+    </label>
+  );
 
   const undoRef = useRef(undo);
   useEffect(() => { undoRef.current = undo; }, [undo]);
-  const undoFiling = async () => {
+  const undoFiling = async (expectedBatchId?: number) => {
     try {
-      const filing = await undoRef.current();
+      const filing = await undoRef.current(expectedBatchId);
       if (filing) setCurrentId(filing.id);
     } catch (error) {
       toast.error("Could not undo filing", { description: String(error) });
@@ -56,8 +78,8 @@ function Review() {
 
   const doFile = async (type: ReportType) => {
     if (!current || filingBusy || active !== "filing") return;
-    const idx = pending.indexOf(current);
-    const next = pending[idx + 1] ?? pending[idx - 1];
+    const idx = scoped.indexOf(current);
+    const next = scoped[idx + 1] ?? scoped[idx - 1];
     try {
       if (!await file(current.id, type)) return;
       setCurrentId(next?.id);
@@ -67,17 +89,40 @@ function Review() {
     }
   };
 
+  const showMatches = () => {
+    const key = current && reviewMatchKey(current);
+    if (!key || matching.length < 2) return;
+    setBatch({
+      key, ids: matching.map((r) => r.id),
+      names: matching.map((r) => r.fileName),
+      tests: current.printedSections?.map((section) => section.label) ?? [],
+    });
+    setBatchType("");
+  };
+
+  const confirmBatch = async () => {
+    if (!batch || !batchType || filingBusy) return;
+    const result = await fileMatching(batch.ids, batch.key, batchType);
+    setBatch(undefined);
+    if (result.stopped) toast.warning(`${result.filed} of ${batch.ids.length} filed. Review the remaining reports and try again.`, result.filed ? {
+      action: { label: "Undo group", onClick: () => void undoFiling(result.batchId) },
+    } : undefined);
+    else toast.success(`Filed ${result.filed} reports as ${batchType}`, {
+      action: { label: "Undo group", onClick: () => void undoFiling(result.batchId) },
+    });
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (active !== "filing") return;
-      if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey) return;
+      if (active !== "filing" || batch || filingBusy) return;
+      if ((e.target instanceof HTMLElement && e.target.closest("input,select,textarea,[contenteditable]")) || e.metaKey || e.ctrlKey) return;
       const k = e.key.toUpperCase();
       const c = CHOICES.find((x) => x.key === k);
       if (c) { e.preventDefault(); void doFile(c.type); }
       if (k === "Z") void undoFiling();
       if (k === "J" || k === "K") {
-        const i = current ? pending.indexOf(current) : 0;
-        const n = pending[k === "J" ? i + 1 : i - 1];
+        const i = current ? scoped.indexOf(current) : 0;
+        const n = scoped[k === "J" ? i + 1 : i - 1];
         if (n) setCurrentId(n.id);
       }
     };
@@ -98,21 +143,23 @@ function Review() {
   if (!current) {
     return (
       <div className="mx-auto max-w-3xl">
-        <PageHeader eyebrow="Review" title={failedImports.length ? "No reports waiting to file" : "All caught up"} />
+        <PageHeader eyebrow="Review" title={pending.length ? "No reports for this scanner" : failedImports.length ? "No reports waiting to file" : "All caught up"} />
         {selection}
-        <p className="text-lg text-muted-foreground">{failedImports.length ? "Open Import issues to review PDFs that could not be filed." : "Every report is filed. New reports that need a decision will appear here."}</p>
-        {lastFiling && <Button variant="outline" disabled={filingBusy} onClick={() => void undoFiling()} className="mt-4 inline-flex items-center gap-2 rounded-md border px-4 py-2 hover:bg-muted"><Undo2 className="size-4" />Undo last filing</Button>}
+        {filter}
+        <p className="text-lg text-muted-foreground">{pending.length ? "Choose another scanner to continue reviewing." : failedImports.length ? "Open Import issues to review PDFs that could not be filed." : "Every report is filed. New reports that need a decision will appear here."}</p>
+        {lastFiling && <Button variant="outline" disabled={filingBusy} onClick={() => void undoFiling()} className="mt-4 inline-flex items-center gap-2 rounded-md border px-4 py-2 hover:bg-muted"><Undo2 className="size-4" />{lastFiling.batchId ? "Undo last group" : "Undo last filing"}</Button>}
       </div>
     );
   }
 
   return (
     <div className="mx-auto max-w-7xl">
-      <PageHeader eyebrow={`Review · ${pending.length} left`} title="Needs attention">
+      <PageHeader eyebrow={`Review · ${scoped.length} left`} title="Needs attention">
         <p className="text-sm text-muted-foreground">Clean Daily and Monthly reports are filed automatically. Reports with unreadable results or other exceptions appear here for review.</p>
-        
+        {lastFiling && <Button variant="outline" disabled={filingBusy} onClick={() => void undoFiling()}><Undo2 />{lastFiling.batchId ? "Undo last group" : "Undo last filing"}</Button>}
       </PageHeader>
       {selection}
+      {filter}
       <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
         <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
           <div className="rounded-lg border bg-card p-5">
@@ -135,10 +182,13 @@ function Review() {
                 </Button>
               ))}
             </div>
+            {matching.length > 1 && (
+              <Button variant="outline" className="mt-3 w-full" disabled={filingBusy} onClick={showMatches}>Review {matching.length} matching reports</Button>
+            )}
             <p className="mt-3 text-xs text-muted-foreground">Filing sorts the document. It is not clinical sign-off.</p>
           </div>
           <div className="max-h-72 overflow-y-auto rounded-lg border bg-card" role="list" aria-label="Queue">
-            {pending.map((r) => (
+            {scoped.map((r) => (
               <Button variant="outline" key={r.id} role="listitem" onClick={() => setCurrentId(r.id)}
                 className={cn("flex w-full items-center justify-between gap-2 border-b px-4 py-2 text-left text-sm last:border-0 hover:bg-muted", r.id === current.id && "bg-accent")}>
                 <ScannerLabel id={r.scanner} /><span className="font-mono text-muted-foreground">{r.date.slice(5)}</span>
@@ -148,6 +198,27 @@ function Review() {
         </div>
         <div className="min-w-0"><ReportPreview key={current.id} report={current} initialView={current.printedStatus === "Not available" || !current.printedStatus ? "pdf" : "readings"} /></div>
       </div>
+      <Dialog open={Boolean(batch)} onOpenChange={(open) => { if (!open && !filingBusy) setBatch(undefined); }}>
+        {batch && <DialogContent>
+          <DialogTitle>File {batch.ids.length} matching reports</DialogTitle>
+          <DialogDescription>These reports share a scanner, software version, printed tests, and measurement layout. Confirm their filing category.</DialogDescription>
+          <p className="text-sm font-medium">{batch.tests.join(" · ")}</p>
+          <ul className="max-h-40 space-y-1 overflow-auto rounded-md border p-3 text-sm">
+            {batch.names.map((name, index) => <li key={batch.ids[index]} className="break-all">{name}</li>)}
+          </ul>
+          <label className="grid gap-1 text-sm font-medium">File as
+            <select value={batchType} disabled={filingBusy} className="h-10 rounded-md border bg-card px-3"
+              onChange={(event) => setBatchType(event.target.value as ReportType | "")}>
+              <option value="">Choose a category</option>
+              {CHOICES.map(({ type }) => <option key={type}>{type}</option>)}
+            </select>
+          </label>
+          <DialogFooter>
+            <Button variant="outline" disabled={filingBusy} onClick={() => setBatch(undefined)}>Cancel</Button>
+            <Button disabled={!batchType || filingBusy} onClick={() => void confirmBatch()}>{filingBusy ? "Updating QA Library…" : `File ${batch.ids.length} reports`}</Button>
+          </DialogFooter>
+        </DialogContent>}
+      </Dialog>
     </div>
   );
 }

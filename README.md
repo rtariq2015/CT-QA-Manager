@@ -49,6 +49,10 @@ The Windows app stores a local report catalog with the PDFs in **QA Library**. A
 
 The first scan after upgrading from an earlier version builds the catalog. Older PDFs whose source folders are unavailable can be imported from a saved copy.
 
+## Review by scanner
+
+In **Review**, select a scanner to see its pending reports. When the selected PDF has matching reports, choose **Review matching reports**, inspect the list, and confirm **Daily**, **Monthly**, or **Other** once. Matches require the same scanner, software, printed tests, and measurement layout. Printed exceptions and incomplete reports stay available for individual review. **Undo last group** reverses the last group filing in the current session.
+
 ## Review import issues
 
 If a PDF cannot be parsed, open **Review → Import issues** to see the reason and original PDF. Windows keeps a copy in **QA Library → Review Inbox**, so you can reopen it after restarting. **Mark reviewed** clears the item from the inbox while retaining the copy. The web workspace keeps originals for the current session.

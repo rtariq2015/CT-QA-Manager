@@ -1,5 +1,6 @@
 import type { FailedImport } from "./qa-import-failure";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type Context } from "react";
+import { reviewMatchKey } from "./qa-review-matching";
 import { reviewReason, triage } from "./qa-triage";
 import { saveArchivedReport } from "./qa-library";
 import { desktop } from "./qa-desktop";
@@ -7,7 +8,7 @@ import { log } from "./qa-logger";
 import { localDate, type Report, type ReportType } from "./qa-data";
 import { DEFAULT, normalizeConfig, SETTINGS_KEY, type Config } from "./qa-settings";
 
-interface Filing { id: string; type: ReportType; previous: ReportType | undefined; at: number }
+interface Filing { id: string; type: ReportType; previous: ReportType | undefined; at: number; batchId?: number }
 type Filings = Record<string, ReportType>;
 type Schedule = Pick<Config, "days" | "dueDay">;
 // Filter out synthetic report IDs found in older backups.
@@ -28,7 +29,8 @@ interface Store {
   addFailedImport: (failure: FailedImport) => void;
   markFailedImportReviewed: (failure: FailedImport) => Promise<void>;
   file: (id: string, type: ReportType) => Promise<boolean>;
-  undo: () => Promise<Filing | undefined>;
+  fileMatching: (ids: string[], matchKey: string, type: ReportType) => Promise<{ filed: number; stopped: boolean; batchId?: number }>;
+  undo: (expectedBatchId?: number) => Promise<Filing | undefined>;
   filingBusy: boolean;
   lastFiling: Filing | undefined;
   history: Filing[];
@@ -157,23 +159,70 @@ export function QaProvider({ children }: { children: ReactNode }) {
     return true;
   }, [reports, updateArchive, overrides, setOverrides, setHistory]);
 
-  const undo = useCallback(async () => {
-    const last = history[0];
-    if (!last || writingArchive.current) return;
-    const report = localReports.find((r) => r.id === last.id);
-    if (report && desktop()) {
-      await updateArchive({ ...report, type: last.previous ?? triage(report).type });
+  const latestReports = useRef(reports);
+  useEffect(() => { latestReports.current = reports; }, [reports]);
+  const nextBatchId = useRef(0);
+  const fileMatching = useCallback(async (ids: string[], matchKey: string, type: ReportType) => {
+    const selected = [...new Set(ids)];
+    const matches = (id: string) => latestReports.current.find((report) => report.id === id);
+    const isMatch = (report: Report | undefined): report is Report =>
+      Boolean(report && !currentOverrides.current[report.id] && reviewMatchKey(report) === matchKey);
+    if (writingArchive.current || selected.length < 2 || !matchKey || !selected.every((id) => isMatch(matches(id)))) {
+      return { filed: 0, stopped: true };
     }
-    setOverrides((o) => {
-      const next = { ...o };
-      if (last.previous) next[last.id] = last.previous;
-      else delete next[last.id];
-      return next;
-    });
-    setHistory((h) => h.slice(1));
-    log("info", "filing", `Undid filing (${last.type})`);
-    return last;
-  }, [history, localReports, updateArchive, setOverrides, setHistory]);
+    writingArchive.current = true;
+    setFilingBusy(true);
+    const batchId = ++nextBatchId.current;
+    let filed = 0;
+    try {
+      for (const id of selected) {
+        const report = matches(id);
+        if (!isMatch(report)) return { filed, stopped: true, batchId };
+        if (desktop()) {
+          try {
+            await saveArchivedReport({ ...report, type });
+          } catch {
+            log("error", "filing", `Could not file ${report.fileName} in the matching group`);
+            return { filed, stopped: true, batchId };
+          }
+        }
+        setOverrides((o) => ({ ...o, [id]: type }));
+        setHistory((h) => [{ id, type, previous: undefined, at: Date.now(), batchId }, ...h]);
+        log("info", "filing", `${report.fileName} filed as ${type} in matching group`);
+        filed++;
+      }
+      return { filed, stopped: false, batchId };
+    } finally {
+      writingArchive.current = false;
+      setFilingBusy(false);
+    }
+  }, [setOverrides]);
+
+  const undo = useCallback(async (expectedBatchId?: number) => {
+    const last = history[0];
+    if (!last || writingArchive.current || (expectedBatchId !== undefined && last.batchId !== expectedBatchId)) return;
+    const filings = last.batchId === undefined ? [last] : history.filter((item) => item.batchId === last.batchId);
+    writingArchive.current = true;
+    setFilingBusy(true);
+    try {
+      for (const filing of filings) {
+        const report = localReports.find((r) => r.id === filing.id);
+        if (report && desktop()) await saveArchivedReport({ ...report, type: filing.previous ?? triage(report).type });
+        setOverrides((o) => {
+          const next = { ...o };
+          if (filing.previous) next[filing.id] = filing.previous;
+          else delete next[filing.id];
+          return next;
+        });
+        setHistory((h) => h.filter((item) => item !== filing));
+        log("info", "filing", `Undid filing (${filing.type})`);
+      }
+      return last;
+    } finally {
+      writingArchive.current = false;
+      setFilingBusy(false);
+    }
+  }, [history, localReports, setOverrides]);
 
   const addReport = useCallback((report: Report) => {
     const filed = filedReport(report, currentOverrides.current);
@@ -185,7 +234,7 @@ export function QaProvider({ children }: { children: ReactNode }) {
 
   const value: Store = {
     today: clockDay, schedule,
-    reports, addReport, pending, failedImports, addFailedImport, markFailedImportReviewed, file, undo, filingBusy, history, lastFiling: history[0],
+    reports, addReport, pending, failedImports, addFailedImport, markFailedImportReviewed, file, fileMatching, undo, filingBusy, history, lastFiling: history[0],
     theme, compact, overrides,
     restoreFilings: (f) => { const filings = importedFilings(f); setOverrides(filings); setHistory([]); log("info", "settings", `Backup restored: ${Object.keys(filings).length} filings`); },
     toggleTheme: () => setTheme((t) => { const n = t === "dark" ? "light" : "dark"; localStorage.setItem("qa-theme", n); return n; }),
