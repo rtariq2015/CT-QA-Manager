@@ -1,0 +1,46 @@
+name: Build Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Draft release tag to receive the Windows ZIP
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check draft matches source
+        shell: pwsh
+        run: |
+          $release = gh release view $env:RELEASE_TAG --json isDraft,targetCommitish | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or !$release.isDraft -or $release.targetCommitish -ne $env:GITHUB_SHA) {
+            throw "Select a draft release targeting this commit."
+          }
+      - run: npm install --ignore-scripts --no-package-lock --no-audit --no-fund
+      - run: npm test
+      - run: npm run package:windows
+      - name: Zip and upload the Windows folder
+        shell: pwsh
+        run: |
+          $folder = "electron-release/CT QA Manager-win32-x64"
+          $zip = "CT-QA-Manager-Windows-x64.zip"
+          if (!(Test-Path "$folder/CT QA Manager.exe") -or !(Test-Path "$folder/resources/app/dist/client/index.html")) {
+            throw "Windows package is incomplete."
+          }
+          Compress-Archive -LiteralPath $folder -DestinationPath $zip
+          "$((Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant())  $zip" | Set-Content -Encoding ascii SHA256SUMS.txt
+          gh release upload $env:RELEASE_TAG $zip SHA256SUMS.txt
+          if ($LASTEXITCODE -ne 0) { throw "Upload failed." }
