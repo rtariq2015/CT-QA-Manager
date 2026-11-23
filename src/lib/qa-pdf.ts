@@ -1,5 +1,7 @@
 import { parseSiemensPages, type PdfTextPage } from "./qa-parser";
 import { log } from "./qa-logger";
+import type { FailedImport } from "./qa-import-failure";
+import { pdfReadErrorCode } from "./qa-read-error";
 import type { Report } from "./qa-data";
 import { desktop } from "./qa-desktop";
 import { saveArchivedReport } from "./qa-library";
@@ -15,11 +17,34 @@ export interface PdfImportResult {
 }
 
 /** Import through the same filing and archive path for folders and individual PDFs. */
-export async function importQaPdf(file: File, addReport: (report: Report) => Report): Promise<PdfImportResult> {
+export async function importQaPdf(
+  file: File,
+  addReport: (report: Report) => Report,
+  addFailedImport: (failure: FailedImport) => void,
+): Promise<PdfImportResult> {
   const start = performance.now();
-  const bytes = await file.arrayBuffer();
   const bridge = desktop();
-  const { report: parsed, cached } = await readQaPdf(file, bytes, !!bridge);
+  let bytes: ArrayBuffer | undefined;
+  let parsed: Report;
+  let cached: boolean;
+  try {
+    bytes = await file.arrayBuffer();
+    ({ report: parsed, cached } = await readQaPdf(file, bytes, !!bridge));
+  } catch (error) {
+    const code = pdfReadErrorCode(error);
+    if (bridge && bytes) {
+      try {
+        const entry = await bridge.saveFailedImport(file.name, code, new Uint8Array(bytes));
+        if (entry) addFailedImport(entry);
+      } catch {
+        log("error", "folder", "Could not save the failed PDF to the Review Inbox");
+        addFailedImport(await sessionFailure(file, code));
+      }
+    } else {
+      addFailedImport(await sessionFailure(file, code));
+    }
+    throw error;
+  }
   const originalUrl = sourceUrls.get(parsed) ?? URL.createObjectURL(file);
   sourceUrls.set(parsed, originalUrl);
   const report = { ...parsed, originalUrl };
@@ -35,6 +60,15 @@ export async function importQaPdf(file: File, addReport: (report: Report) => Rep
     log("error", "folder", `Could not save a copy of ${file.name}: ${archiveError}`);
     return { ...result, saved: false, archiveError };
   }
+}
+
+async function sessionFailure(file: File, code: FailedImport["code"]): Promise<FailedImport> {
+  let id = JSON.stringify([file.name, file.size, file.lastModified]);
+  try {
+    const hash = await globalThis.crypto?.subtle?.digest("SHA-256", await file.arrayBuffer());
+    if (hash) id = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  } catch { /* preserve the queue entry even when the PDF bytes cannot be opened */ }
+  return { id, fileName: file.name, code, archived: false, original: file, at: new Date().toISOString() };
 }
 
 // Cache parsed readings for identical PDFs within this app session.

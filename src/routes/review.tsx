@@ -1,3 +1,4 @@
+import { FailedImports } from "@/components/qa/FailedImports";
 import { tidyFileName } from "@/lib/qa-library";
 import { Button } from "@/components/ui/button";
 import { createFileRoute } from "@tanstack/react-router";
@@ -30,7 +31,15 @@ const CHOICES: { type: ReportType; key: string }[] = [
 ];
 
 function Review() {
-  const { pending, file, undo, filingBusy, lastFiling } = useQa();
+  const { pending, failedImports, file, undo, filingBusy, lastFiling } = useQa();
+  const [view, setView] = useState<"filing" | "failed">();
+  const active = view ?? (pending.length || !failedImports.length ? "filing" : "failed");
+  const selection = (
+    <div className="mb-4 flex flex-wrap gap-2" aria-label="Review inbox views">
+      <Button variant={active === "filing" ? "default" : "outline"} aria-pressed={active === "filing"} onClick={() => setView("filing")}>Ready to review ({pending.length})</Button>
+      <Button variant={active === "failed" ? "default" : "outline"} aria-pressed={active === "failed"} onClick={() => setView("failed")}>Import issues ({failedImports.length})</Button>
+    </div>
+  );
   const [currentId, setCurrentId] = useState<string | undefined>(undefined);
   const current = pending.find((r) => r.id === currentId) ?? pending[0];
 
@@ -46,7 +55,7 @@ function Review() {
   };
 
   const doFile = async (type: ReportType) => {
-    if (!current || filingBusy) return;
+    if (!current || filingBusy || active !== "filing") return;
     const idx = pending.indexOf(current);
     const next = pending[idx + 1] ?? pending[idx - 1];
     try {
@@ -60,6 +69,7 @@ function Review() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (active !== "filing") return;
       if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey) return;
       const k = e.key.toUpperCase();
       const c = CHOICES.find((x) => x.key === k);
@@ -75,11 +85,22 @@ function Review() {
     return () => window.removeEventListener("keydown", onKey);
   });
 
+  if (active === "failed") {
+    return (
+      <div className="mx-auto max-w-7xl">
+        <PageHeader eyebrow="Review" title="Import issues" />
+        {selection}
+        <FailedImports />
+      </div>
+    );
+  }
+
   if (!current) {
     return (
       <div className="mx-auto max-w-3xl">
-        <PageHeader eyebrow="Review" title="All caught up" />
-        <p className="text-lg text-muted-foreground">Every report is filed. New reports that can't be filed automatically will appear here.</p>
+        <PageHeader eyebrow="Review" title={failedImports.length ? "No reports waiting to file" : "All caught up"} />
+        {selection}
+        <p className="text-lg text-muted-foreground">{failedImports.length ? "Open Import issues to review PDFs that could not be filed." : "Every report is filed. New reports that need a decision will appear here."}</p>
         {lastFiling && <Button variant="outline" disabled={filingBusy} onClick={() => void undoFiling()} className="mt-4 inline-flex items-center gap-2 rounded-md border px-4 py-2 hover:bg-muted"><Undo2 className="size-4" />Undo last filing</Button>}
       </div>
     );
@@ -91,6 +112,7 @@ function Review() {
         <p className="text-sm text-muted-foreground">Clean Daily and Monthly reports are filed automatically. Reports with unreadable results or other exceptions appear here for review.</p>
         
       </PageHeader>
+      {selection}
       <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
         <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
           <div className="rounded-lg border bg-card p-5">
@@ -124,7 +146,7 @@ function Review() {
             ))}
           </div>
         </div>
-        <div className="min-w-0"><ReportPreview key={current.id} report={current} /></div>
+        <div className="min-w-0"><ReportPreview key={current.id} report={current} initialView={current.printedStatus === "Not available" || !current.printedStatus ? "pdf" : "readings"} /></div>
       </div>
     </div>
   );

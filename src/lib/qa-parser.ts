@@ -17,15 +17,15 @@ const limits = new RegExp(`(${NUMBER})\\s*(?:\\.\\.\\.|…|\\.\\.)\\s*(${NUMBER}
 export function parseSiemensPages(pages: PdfTextPage[], filename: string, sizeKb: number): Report {
   const all = pages.flatMap(p => p.lines).join("\n").replaceAll("\u00a0", " ");
   if (isVa40(all)) return parseVa40Pages(pages, filename, sizeKb);
-  const model = /Product Name\s+(SOMATOM[^\n]+)/.exec(all)?.[1]?.trim();
+  const model = /Product[ \t]+Name[ \t]*:?[ \t\n]+(SOMATOM[^\n]+)/.exec(all)?.[1]?.trim();
   const scanner: ScannerId | undefined = model?.includes("Drive") ? "drive" : model?.includes("Flash") ? "flash" : model?.includes("Edge") ? "edge" : model?.includes("X.cite") ? "xcite" : undefined;
   if (!scanner) throw new PdfReadError("scanner-unrecognized", "Scanner identity could not be matched. This PDF needs manual review.");
   const stamp = /(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}(?::\d{2})?)/.exec(all);
   if (!stamp?.[1] || !stamp[2] || !validReportTimestamp(stamp[1], stamp[2])) throw new PdfReadError("invalid-report-date", "Report date could not be read. This PDF needs manual review.");
   const sections: PrintedSection[] = [];
   for (const p of pages) for (const raw of p.lines) {
-    const m = /^\s*\d+\.\s*Quality (?:Daily|IEC Constancy|IEC Acceptance)\s+(.+?)\s+(NOT\s+OK|OK)\s*[.\s]*(\d+)\s*$/.exec(raw);
-    if (m?.[1] && m[2]) sections.push({ label: m[1].trim(), status: m[2].replace(/\s+/g, " ") as PrintedStatus, page: Number(m[3]) });
+    const m = /^\s*\d+\.\s*Quality\s+(?:Daily|IEC\s+Constancy|IEC\s+Acceptance)\s+(.+?)\s+(NOT\s+OK|OK)\s*[.…\s]*(\d+)\s*$/i.exec(raw.replaceAll("\u00a0", " "));
+    if (m?.[1] && m[2]) sections.push({ label: m[1].trim(), status: m[2].toUpperCase().replace(/\s+/g, " ") as PrintedStatus, page: Number(m[3]) });
   }
   const measurements: Measurement[] = [];
   let extractionIncomplete = false;
@@ -36,7 +36,7 @@ export function parseSiemensPages(pages: PdfTextPage[], filename: string, sizeKb
     const lines = p.lines.map(l => l.replaceAll("\u00a0", " ").trim()).filter(Boolean);
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? "";
-      const heading = /^\d+\.\s*Quality (?:Daily|IEC Constancy)\s+(.+)/.exec(line);
+      const heading = /^\d+\.\s*Quality\s+(?:Daily|IEC\s+Constancy)\s+(.+)/.exec(line);
       if (heading?.[1] && !/\.{3}/.test(line)) {
         const label = heading[1];
         metric = /Noise/.test(label) ? "noise" : /Homogeneity/.test(label) ? "water" : /MTF/.test(label) ? "mtf50" : /Slice/.test(label) ? "slice" : /Contrast/.test(label) ? "contrast" : undefined;
@@ -129,6 +129,6 @@ export function parseSiemensPages(pages: PdfTextPage[], filename: string, sizeKb
   const dailyConstancy = sections.length === 2
     && sections.some(s => s.label === "Noise")
     && sections.some(s => s.label === "Homogeneity" || s.label === "Homogeneity / Water");
-  const suggested = /Quality (?:IEC )?Acceptance/.test(all) ? "Other" : /Quality Daily/.test(all) || dailyConstancy ? "Daily" : sections.length > 2 ? "Monthly" : "Other";
+  const suggested = /Quality\s+(?:IEC\s+)?Acceptance/.test(all) ? "Other" : /Quality\s+Daily/.test(all) || dailyConstancy ? "Daily" : sections.length > 2 ? "Monthly" : "Other";
   return { id: `local-${filename}-${stamp[1]}-${stamp[2]}`, scanner, date: stamp[1], time: stamp[2], fileName: filename, sizeKb, type: "Other", suggested, confidence: "uncertain", needsReview: true, measurements: unique, pages: pages.length, source: "uploaded", printedStatus, printedSections: sections, software: /Software Version\s+([^\n]+)/.exec(all)?.[1]?.trim() ?? "Not available", extractionIncomplete, extractionNotes: ["Partial extraction: slice tables with explicit printed limits only. Check the original PDF for other tests.", ...(sections.length ? [] : ["Printed summary not available; no QA result inferred."]), ...(unique.length ? [] : ["No supported measurement tables found."]), ...(extractionIncomplete ? ["Some rows do not have readable measurements and matching printed limits."] : [])] };
 }

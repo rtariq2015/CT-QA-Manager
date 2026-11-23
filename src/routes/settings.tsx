@@ -136,7 +136,7 @@ function Settings() {
     } catch (e) { toast.error((e as Error).message); }
   };
   const problemReport = () => download("CTQA-problem-report.json", exportDiagnostic({
-    app: desktop() ? "desktop" : "web", reports: qa.reports.length, waitingInReview: qa.pending.length,
+    app: desktop() ? "desktop" : "web", reports: qa.reports.length, waitingInReview: qa.pending.length + qa.failedImports.length,
   }));
 
   return (

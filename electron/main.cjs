@@ -7,6 +7,7 @@ const { app, BrowserWindow, dialog, shell, ipcMain, protocol, safeStorage } = re
 const { execFile } = require("child_process");
 const path = require("path");
 const fs = require("fs");
+const { createHash, randomUUID } = require("crypto");
 
 const CLIENT_DIR = path.join(__dirname, "..", "dist", "client");
 const APP_SCHEME = "ctqa";
@@ -186,26 +187,28 @@ handleAppMessage("ctqa:readFolder", async (_e, source) => {
       return { ok: false, error: `Login failed for ${source.name}. Check the saved account and password.`, diagnostic: loginResult, files: [] };
     }
   }
-  let listing = true;
   try {
     const paths = await walkPdfs(p);
-    listing = false;
     const files = [];
+    const unreadableFiles = [];
     for (const file of paths) {
-      files.push({ name: path.basename(file), data: await fs.promises.readFile(file) });
+      const name = path.basename(file);
+      try {
+        files.push({ name, data: await fs.promises.readFile(file) });
+      } catch {
+        unreadableFiles.push(name);
+      }
     }
-    return { ok: true, files };
+    return { ok: true, files, unreadableFiles };
   } catch (error) {
     if (error.message.startsWith("This folder contains")) {
       return { ok: false, error: error.message, diagnostic: { code: "folder-limit" }, files: [] };
     }
     const code = loginResult?.code === "credential-conflict" ? "credential-conflict"
-      : !listing ? "source-pdf-read-failed"
       : error.code === "EACCES" || error.code === "EPERM" ? "folder-access-denied"
       : error.code === "ENOENT" || error.code === "ENOTDIR" ? "folder-not-found" : "folder-unavailable";
     const nativeCode = loginResult?.nativeCode ?? (Number.isInteger(error.errno) ? error.errno : undefined);
     const message = code === "credential-conflict" ? "Windows already has a connection using a different account."
-      : code === "source-pdf-read-failed" ? "A PDF in the folder could not be read from disk."
       : code === "folder-access-denied" ? "Access to the folder was denied."
       : code === "folder-not-found" ? "The folder or drive could not be found." : "The folder could not be opened.";
     return { ok: false, error: `${source.name}: ${message}`, diagnostic: { code, nativeCode }, files: [] };
@@ -272,6 +275,71 @@ handleAppMessage("ctqa:saveCopy", (_e, rel, data, previous = []) => {
     return { ok: true, path: target, existed: false };
   } catch (err) { return { ok: false, error: String(err && err.message || err) }; }
 });
+const inbox = () => path.join(libraryRoot(), "Review Inbox");
+const inboxCodes = new Set(["scanner-unrecognized", "invalid-report-date", "pdf-password-required", "invalid-pdf", "pdf-read-failed"]);
+
+function inboxPath(id, extension) {
+  if (typeof id !== "string" || !/^[0-9a-f]{64}$/.test(id)) throw new Error("Invalid Review Inbox ID");
+  checkArchiveDirectory(inbox());
+  const file = path.join(inbox(), `${id}.${extension}`);
+  if (fs.existsSync(file) && !fs.lstatSync(file).isFile()) throw new Error("Invalid Review Inbox file");
+  return file;
+}
+
+function writeInboxFile(file, data) {
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, data, { flag: "wx" });
+    fs.renameSync(temporary, file);
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
+}
+
+function writeInboxRecord(entry) {
+  writeInboxFile(inboxPath(entry.id, "json"), JSON.stringify(entry));
+}
+
+handleAppMessage("ctqa:saveFailedImport", (_event, name, code, data) => {
+  if (typeof name !== "string" || !inboxCodes.has(code)) throw new Error("Invalid failed import");
+  fs.mkdirSync(inbox(), { recursive: true });
+  const bytes = Buffer.from(data);
+  const id = createHash("sha256").update(bytes).digest("hex");
+  const metadata = inboxPath(id, "json");
+  if (fs.existsSync(metadata)) {
+    const entry = JSON.parse(fs.readFileSync(metadata, "utf8"));
+    return entry.reviewed ? null : entry;
+  }
+  const pdf = inboxPath(id, "pdf");
+  if (!fs.existsSync(pdf)) writeInboxFile(pdf, bytes);
+  const entry = { id, fileName: path.basename(name), code, at: new Date().toISOString(), archived: true };
+  writeInboxRecord(entry);
+  return entry;
+});
+
+handleAppMessage("ctqa:listFailedImports", () => {
+  if (!fs.existsSync(inbox())) return [];
+  checkArchiveDirectory(inbox());
+  return fs.readdirSync(inbox(), { withFileTypes: true })
+    .filter((file) => file.isFile() && /^[0-9a-f]{64}\.json$/.test(file.name))
+    .flatMap((file) => {
+      try {
+        const id = file.name.slice(0, -5);
+        const entry = JSON.parse(fs.readFileSync(inboxPath(id, "json"), "utf8"));
+        return !entry.reviewed && entry.id === id && typeof entry.fileName === "string" &&
+          typeof entry.at === "string" && inboxCodes.has(entry.code) ? [entry] : [];
+      } catch {
+        return [];
+      }
+    });
+});
+
+handleAppMessage("ctqa:openFailedImport", (_event, id) => fs.promises.readFile(inboxPath(id, "pdf")));
+handleAppMessage("ctqa:reviewFailedImport", (_event, id) => {
+  const entry = JSON.parse(fs.readFileSync(inboxPath(id, "json"), "utf8"));
+  writeInboxRecord({ ...entry, id, reviewed: true });
+});
+
 handleAppMessage("ctqa:openLibrary", async () => {
   fs.mkdirSync(libraryRoot(), { recursive: true });
   const err = await shell.openPath(libraryRoot());

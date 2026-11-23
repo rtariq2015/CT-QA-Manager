@@ -12,12 +12,12 @@ const RANGE = new RegExp(`(${NUM})\\s*(?:…|\\.\\.\\.)\\s*(${NUM})`, "g");
 const num = (s: string) => Number(s.replaceAll(",", ""));
 const ranges = (s: string) => [...s.matchAll(RANGE)].map(m => [num(m[1] ?? ""), num(m[2] ?? "")] as [number, number]);
 
-export const isVa40 = (all: string) => /\|\s*SOMATOM X\.cite\s*\|/.test(all) || /Product\s+Name\s+SOMATOM\s+X\.cite/.test(all);
+export const isVa40 = (all: string) => /\|\s*SOMATOM X\.cite\s*\|/.test(all) || /Product\s+Name\s*:?\s+SOMATOM\s+X\.cite\b/.test(all);
 
 function iso(m: string, d: string, y: string) { return `${y}-${m}-${d}`; }
 function time24(h: string, mi: string, s: string, ap: string) {
   if (Number(h) < 1 || Number(h) > 12) return "";
-  let n = Number(h) % 12; if (ap === "PM") n += 12;
+  let n = Number(h) % 12; if (ap.toUpperCase() === "PM") n += 12;
   return `${String(n).padStart(2, "0")}:${mi}:${s}`;
 }
 
@@ -41,10 +41,10 @@ export function parseVa40Pages(pages: PdfTextPage[], filename: string, sizeKb: n
   // Summary rows; the OK/Not OK may sit on the following line.
   const sections: PrintedSection[] = [];
   let stamp: { date: string; time: string } | undefined;
-  const summaryPages = pages.filter(p => p.lines.some(l => /^\s*Summary\s*$/.test(l)));
+  const summaryPages = pages.filter(p => p.lines.some(l => /^\s*Summary(?:\s*\(continued\))?\s*$/i.test(l)));
   for (const summaryPage of summaryPages) {
     const text = summaryPage.lines.join("\n").replaceAll("\u00a0", " ");
-    const row = /([A-Z][A-Za-z/ ]+?)(?:\s*\(IEC Constancy\))?\s+(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)\s*\n?\s*(Not OK|NOT OK|OK)\b/g;
+    const row = /([A-Z][A-Za-z/ ]+?)(?:\s*\(IEC Constancy\))?\s+(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)\s*\n?\s*(Not\s+OK|OK)\b/gi;
     for (const m of text.matchAll(row)) {
       const label = (m[1] ?? "").replace(/^(?:Function Start Time Result|Result)\s*/, "").trim();
       sections.push({ label, status: /not/i.test(m[9] ?? "") ? "NOT OK" : "OK", page: summaryPage.page });

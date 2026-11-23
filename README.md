@@ -32,7 +32,7 @@ Click **Save** in Windows Settings to write **Settings.json** beside the executa
 | --- | --- |
 | **Today** | Check Daily QA receipt, pending reviews, printed exceptions, and monthly deadlines. |
 | **Reports** | Search imported reports, open the source PDF, and check receipt on the calendar. |
-| **Review** | Check unreadable or flagged results, file as Daily, Monthly, or Other, and undo a filing. |
+| **Review** | Open failed imports and their original PDFs, review flagged readings, file reports, and undo a filing. |
 | **Monthly and Trends** | View the monthly checklist and chart supported readings against the printed limits. |
 | **Folders and Exports** | Browse the organized library and export PDFs with a CSV and HTML summary. |
 | **Settings** | Configure scanner folders and the QA schedule, or back up settings and filing decisions. |
@@ -42,6 +42,10 @@ Click **Save** in Windows Settings to write **Settings.json** beside the executa
 The parser supports older Siemens syngo VB PDFs and syngo VA40A reports, including SOMATOM Drive, Flash, Edge, and X.cite. It retains printed results and supported readings with their printed tolerances. Incomplete extractions and exceptions stay visible for review. Filing is a document classification step and leaves the scanner’s printed result intact.
 
 The desktop app works offline with local PDFs. Windows protects saved network credentials, and backups include filing decisions and settings. The report library starts empty until you import PDFs or connect a scanner folder.
+
+## Review import issues
+
+If a PDF cannot be parsed, open **Review → Import issues** to see the reason and original PDF. Windows keeps a copy in **QA Library → Review Inbox**, so you can reopen it after restarting. **Mark reviewed** clears the item from the inbox while retaining the copy. The web workspace keeps originals for the current session.
 
 ## Share a diagnostic
 

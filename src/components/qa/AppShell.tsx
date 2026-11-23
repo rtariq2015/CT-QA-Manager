@@ -42,7 +42,7 @@ const SHORTCUTS: [string, string][] = [
 ];
 
 export function AppShell() {
-  const { today, pending, theme, toggleTheme } = useQa();
+  const { today, pending, failedImports, theme, toggleTheme } = useQa();
   useFolderReader(undefined, true);
   const [isDesktop, setIsDesktop] = useState(false);
   useEffect(() => setIsDesktop(!!desktop()), []);
@@ -70,8 +70,9 @@ export function AppShell() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const badge = (to: string) => to === "/review" && pending.length > 0 && (
-    <span className="ml-auto rounded-full bg-sidebar-primary px-2 text-xs font-semibold text-sidebar-primary-foreground">{pending.length}</span>
+  const needsReview = pending.length + failedImports.length;
+  const badge = (to: string) => to === "/review" && needsReview > 0 && (
+    <span className="ml-auto rounded-full bg-sidebar-primary px-2 text-xs font-semibold text-sidebar-primary-foreground">{needsReview}</span>
   );
   const linkCls = "flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground";
   const active = { className: "bg-sidebar-accent !text-sidebar-accent-foreground font-medium" };
@@ -130,7 +131,7 @@ export function AppShell() {
         {ALL.filter((i) => MOBILE_MAIN.includes(i.to)).map(({ to, label, icon: Icon }) => (
           <Link key={to} to={to} activeOptions={{ exact: to === "/" }} className="relative flex flex-col items-center gap-0.5 py-2 text-xs text-sidebar-foreground/70" activeProps={{ className: "!text-sidebar-primary font-medium" }}>
             <Icon className="size-5" />{label}
-            {to === "/review" && pending.length > 0 && <span className="absolute right-3 top-1 rounded-full bg-sidebar-primary px-1.5 text-[11px] text-sidebar-primary-foreground">{pending.length}</span>}
+            {to === "/review" && needsReview > 0 && <span className="absolute right-3 top-1 rounded-full bg-sidebar-primary px-1.5 text-[11px] text-sidebar-primary-foreground">{needsReview}</span>}
           </Link>
         ))}
         <button onClick={() => setMore(true)} className="flex flex-col items-center gap-0.5 py-2 text-xs text-sidebar-foreground/70"><MoreHorizontal className="size-5" />More</button>

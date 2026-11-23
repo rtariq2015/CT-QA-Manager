@@ -29,7 +29,7 @@ export const Route = createFileRoute("/reports")({
 const ROW = 52;
 
 function Reports() {
-  const { reports, addReport } = useQa();
+  const { reports, addReport, addFailedImport } = useQa();
   const picker = useRef<HTMLInputElement>(null);
   const [reading, setReading] = useState(false);
   const [importMessage, setImportMessage] = useState("");
@@ -41,7 +41,7 @@ function Reports() {
     let count = 0; const errors: string[] = [];
     for (const file of Array.from(files)) {
       try {
-        const result = await importQaPdf(file, addReport);
+        const result = await importQaPdf(file, addReport, addFailedImport);
         scan.recordRead(result);
         const { report, archiveError } = result;
         setSelected(report);

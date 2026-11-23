@@ -100,3 +100,13 @@ it("keeps a conflicting duplicate reading so it can still be flagged", () => {
   expect(report.measurements.map((m) => m.value)).toEqual([3.1, 6.1]);
   expect(report.measurements.some(isOutOfLimit)).toBe(true);
 });
+
+it("reads Siemens VB labels and summary rows with PDF spacing and dot-leader variations", () => {
+  const result = parseSiemensPages([
+    { ...identity, lines: ["Product  Name:  SOMATOM Drive", ...identity.lines.slice(1)] },
+    { page: 2, lines: ["1. Quality\u00a0 Daily Noise Not   OK … 3"] },
+  ], "spaced.pdf", 10);
+  expect(result.scanner).toBe("drive");
+  expect(result.printedSections).toEqual([{ label: "Noise", status: "NOT OK", page: 3 }]);
+  expect(result.printedStatus).toBe("NOT OK");
+});

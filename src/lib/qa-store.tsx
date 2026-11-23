@@ -1,3 +1,4 @@
+import type { FailedImport } from "./qa-import-failure";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type Context } from "react";
 import { reviewReason, triage } from "./qa-triage";
 import { saveArchivedReport } from "./qa-library";
@@ -23,6 +24,9 @@ interface Store {
   reports: Report[];
   addReport: (report: Report) => Report;
   pending: Report[];
+  failedImports: FailedImport[];
+  addFailedImport: (failure: FailedImport) => void;
+  markFailedImportReviewed: (failure: FailedImport) => Promise<void>;
   file: (id: string, type: ReportType) => Promise<boolean>;
   undo: () => Promise<Filing | undefined>;
   filingBusy: boolean;
@@ -45,6 +49,25 @@ export function QaProvider({ children }: { children: ReactNode }) {
   const [schedule, setSchedule] = useState<Schedule>(DEFAULT);
   const [overrides, setOverrideState] = useState<Filings>({});
   const currentOverrides = useRef<Filings>({});
+  const [failedImports, setFailedImports] = useState<FailedImport[]>([]);
+  const reviewedIds = useRef(new Set<string>());
+  const addFailedImport = useCallback((failure: FailedImport) => {
+    if (reviewedIds.current.has(failure.id)) return;
+    setFailedImports((current) => current.some(({ id }) => id === failure.id) ? current : [failure, ...current]);
+  }, []);
+  const markFailedImportReviewed = async (failure: FailedImport) => {
+    if (failure.archived) await desktop()?.reviewFailedImport(failure.id);
+    reviewedIds.current.add(failure.id);
+    setFailedImports((current) => current.filter(({ id }) => id !== failure.id));
+  };
+  useEffect(() => {
+    let active = true;
+    void desktop()?.listFailedImports().then((entries) => {
+      if (!active) return;
+      for (const entry of entries.sort((a, b) => a.at.localeCompare(b.at))) addFailedImport(entry);
+    }).catch(() => log("error", "folder", "Could not load the Review Inbox"));
+    return () => { active = false; };
+  }, [addFailedImport]);
   const [localReports, setLocalReports] = useState<Report[]>([]);
   const [history, setHistory] = useState<Filing[]>([]);
   const [theme, setTheme] = useState<"light" | "dark">("light");
@@ -149,7 +172,7 @@ export function QaProvider({ children }: { children: ReactNode }) {
 
   const value: Store = {
     today: clockDay, schedule,
-    reports, addReport, pending, file, undo, filingBusy, history, lastFiling: history[0],
+    reports, addReport, pending, failedImports, addFailedImport, markFailedImportReviewed, file, undo, filingBusy, history, lastFiling: history[0],
     theme, compact, overrides,
     restoreFilings: (f) => { const filings = importedFilings(f); setOverrides(filings); setHistory([]); log("info", "settings", `Backup restored: ${Object.keys(filings).length} filings`); },
     toggleTheme: () => setTheme((t) => { const n = t === "dark" ? "light" : "dark"; localStorage.setItem("qa-theme", n); return n; }),

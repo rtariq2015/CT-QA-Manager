@@ -56,3 +56,20 @@ it("uses the current local day and saved QA schedule in live mode", () => {
     vi.useRealTimers();
   }
 });
+
+it("keeps failed imports in their own inbox and suppresses repeats after review", async () => {
+  const { result } = renderHook(() => useQa(), { wrapper });
+  const failure = {
+    id: "example", fileName: "unrecognized.pdf", at: "2026-11-23T12:00:00Z",
+    code: "scanner-unrecognized" as const, archived: false,
+  };
+  act(() => {
+    result.current.addFailedImport(failure);
+    result.current.addFailedImport(failure);
+  });
+  expect(result.current.failedImports).toEqual([failure]);
+  expect(result.current.reports).toEqual([]);
+  await act(async () => result.current.markFailedImportReviewed(failure));
+  act(() => result.current.addFailedImport(failure));
+  expect(result.current.failedImports).toEqual([]);
+});

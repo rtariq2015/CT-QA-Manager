@@ -26,12 +26,12 @@ async function* walk(dir: DirHandle): AsyncGenerator<File> {
  * Everything stays in this browser tab: the PDFs are never uploaded anywhere.
  */
 export function useFolderReader(onDone?: () => void, autoConnect = false) {
-  const { addReport } = useQa();
+  const { addReport, addFailedImport } = useQa();
   const [busy, setBusy] = useState<string | null>(null);
   const scanning = useRef(false);
   const input = useRef<HTMLInputElement>(null);
 
-  async function readFiles(files: AsyncIterable<File> | File[], folder: string, kind: "local" | "network" = "local", sourceReadMs = 0, configuredFolder?: number) {
+  async function readFiles(files: AsyncIterable<File> | File[], folder: string, kind: "local" | "network" = "local", sourceReadMs = 0, configuredFolder?: number, unreadableFiles: string[] = []) {
     const scan = startScan(kind, sourceReadMs, configuredFolder);
     const { importQaPdf } = await import("@/lib/qa-pdf");
     const list: File[] = [];
@@ -41,14 +41,20 @@ export function useFolderReader(onDone?: () => void, autoConnect = false) {
       scan.finish(list.length, { code: "folder-enumeration-failed" });
       throw error;
     }
-    log("info", "folder", `Opened folder "${folder}" (${kind}): ${list.length} PDFs found`);
-    setConnection({ state: "reading", kind, folder, done: 0, total: list.length, failed: 0, at: new Date().toISOString() });
-    let ok = 0, bad = 0, saved = 0, unsaved = 0;
+    const total = list.length + unreadableFiles.length;
+    for (const [index, name] of unreadableFiles.entries()) {
+      addFailedImport({ id: JSON.stringify([configuredFolder, name, index]), fileName: name, code: "pdf-read-failed", at: new Date().toISOString(), archived: false });
+      scan.recordFailure(new Error("PDF source could not be read"));
+      log("error", "file", `Could not open ${name} from the source folder`);
+    }
+    log("info", "folder", `Opened folder "${folder}" (${kind}): ${total} PDFs found`);
+    setConnection({ state: "reading", kind, folder, done: unreadableFiles.length, total, failed: unreadableFiles.length, at: new Date().toISOString() });
+    let ok = 0, bad = unreadableFiles.length, saved = 0, unsaved = 0;
     const d = desktop();
     for (const file of list) {
       setBusy(`Reading ${file.name}…`);
       try {
-        const result = await importQaPdf(file, addReport);
+        const result = await importQaPdf(file, addReport, addFailedImport);
         scan.recordRead(result);
         ok++;
         if (result.saved) saved++;
@@ -57,7 +63,7 @@ export function useFolderReader(onDone?: () => void, autoConnect = false) {
       setConnection({ done: ok + bad, failed: bad });
     }
     setConnection({ state: "ready" });
-    const summary = scan.finish(list.length);
+    const summary = scan.finish(total);
     markFolderOpened(folder, kind, ok);
     log(bad || unsaved ? "warning" : "success", "folder", `Finished "${folder}": ${ok} read, ${bad} failed, ${summary.queuedForReview} for review, ${summary.cached} cached, ${saved} saved, ${unsaved} archive failures, ${summary.durationMs} ms total`);
     setBusy(null);
@@ -92,7 +98,7 @@ export function useFolderReader(onDone?: () => void, autoConnect = false) {
           continue;
         }
         const files = res.files.map((f) => new File([f.data as BlobPart], f.name, { type: "application/pdf" }));
-        await readFiles(files, s.path.split(/[\\/]/).filter(Boolean).pop() ?? s.name, kind, sourceReadMs, index + 1);
+        await readFiles(files, s.path.split(/[\\/]/).filter(Boolean).pop() ?? s.name, kind, sourceReadMs, index + 1, res.unreadableFiles);
       }
     } finally {
       scanning.current = false;

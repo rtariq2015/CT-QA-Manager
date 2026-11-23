@@ -62,3 +62,12 @@ describe("SOMATOM X.cite (VA40A) reports", () => {
     ]);
   });
 });
+
+it("keeps a printed exception from a summary explicitly marked continued", () => {
+  const result = parseSiemensPages([cover, dailySummary, {
+    page: 4,
+    lines: ["Summary (continued)", "Noise (IEC Constancy) 08/01/2025 6:20:00 AM Not   OK"],
+  }], "summary-continued.pdf", 10);
+  expect(result.printedSections).toContainEqual({ label: "Noise", status: "NOT OK", page: 4 });
+  expect(triage(result).needsReview).toBe(true);
+});

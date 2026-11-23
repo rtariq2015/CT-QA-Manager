@@ -76,7 +76,7 @@ export function LiveLogView({ tall }: { tall?: boolean }) {
   const day = new Date().toISOString().slice(0, 10);
   const diag = () => save(`CTQA-diagnostic-${day}.json`, exportDiagnostic({
     app: desktop() ? "desktop" : "web", reports: qa.reports.length,
-    waitingInReview: qa.pending.length,
+    waitingInReview: qa.pending.length + qa.failedImports.length,
   }), "application/json");
 
   return (

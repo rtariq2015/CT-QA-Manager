@@ -21,7 +21,7 @@ export const Route = createFileRoute("/")({
 });
 
 function Today() {
-  const { reports, pending, today, schedule } = useQa();
+  const { reports, pending, failedImports, today, schedule } = useQa();
   const month = today.slice(0, 7);
   const dailyExpected = isScheduledQaDay(today, schedule.days);
   const cards = useMemo(() => SCANNERS.map((s) => {
@@ -38,6 +38,7 @@ function Today() {
     return { s, daily, flagged, done, pending: pending.filter((p) => p.scanner === s.id).length, last7 };
   }), [reports, pending, month, today, schedule.days]);
 
+  const reviewCount = pending.length + failedImports.length;
   const monthly = useMemo(() => SCANNERS.map((s) => ({ s, ...monthlyCoverage(reports, s.id, month), waiting: monthlyWaiting(reports, s.id, month) })), [reports, month]);
 
   const received = cards.filter((c) => c.daily).length;
@@ -70,9 +71,9 @@ function Today() {
           <p className="flex items-center gap-2 text-sm font-medium text-sky-100"><CalendarDays className="size-4" />{fmtDate(today)}</p>
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">QA overview</h1>
           <p className="text-base text-slate-200">{dailyExpected ? `${received} of ${SCANNERS.length} scanners have sent today’s Daily QA` : "No Daily QA scheduled today"}</p>
-          {pending.length > 0 && (
+          {reviewCount > 0 && (
             <Link to="/review" className="mt-1 inline-flex w-fit items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-[#10263b] hover:bg-sky-100">
-              Review {pending.length} report{pending.length === 1 ? "" : "s"} <ArrowRight className="size-4" />
+              Review {reviewCount} report{reviewCount === 1 ? "" : "s"} <ArrowRight className="size-4" />
             </Link>
           )}
         </div>
@@ -80,7 +81,7 @@ function Today() {
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Summary label="Daily reports today" value={dailyExpected ? `${received}/${SCANNERS.length}` : String(received)} icon={FileCheck2} to="/reports" />
-        <Summary label="Waiting to file" value={String(pending.length)} icon={ClipboardList} to="/review" />
+        <Summary label="Needs review" value={String(reviewCount)} icon={ClipboardList} to="/review" />
         <Summary label="Printed NOT OK this month" value={String(notOk.length)} tone={notOk.length ? "bad" : undefined} icon={AlertTriangle} to="/reports" />
         <Summary label="Monthly due" value={dueIn === 0 ? "Today" : dueIn > 0 ? `In ${dueIn} days` : `${-dueIn}d overdue`} icon={CalendarDays} to="/monthly" />
       </div>
