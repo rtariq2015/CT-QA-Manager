@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { monthlyWaiting, trendWarnings, type Report } from "./qa-data";
+import { trendWarnings, type Report } from "./qa-data";
+import { monthlyWaiting } from "./qa-monthly-status";
 
 const m = (value: number) => ({ metric: "noise" as const, context: "120 kV", value, unit: "HU", lower: 0, upper: 10, baseline: 5, page: 1 });
 const rep = (date: string, value: number, extra: Partial<Report> = {}) => ({ id: date, scanner: "flash", date, time: "07:00", type: "Daily", measurements: [m(value)], ...extra }) as unknown as Report;

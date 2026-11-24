@@ -33,7 +33,7 @@ Click **Save** in Windows Settings to write **Settings.json** beside the executa
 | **Today** | See one row per scanner with Daily receipt, the printed result, and Monthly progress. Open the report or Review queue directly. |
 | **Reports** | Search the library or switch to Calendar. Aborted tests and out-of-limit readings are highlighted on the report date. |
 | **Review** | See QA exceptions first, acknowledge a filed report, change its filing, or open an import issue. |
-| **Monthly and Trends** | View the monthly checklist and chart supported readings against the printed limits. |
+| **Monthly and Trends** | See reported Monthly test results and open their original PDF pages. Chart supported measurements against their printed limits. |
 | **Folders and Exports** | Browse the organized library and export PDFs with a CSV and HTML summary. |
 | **Settings** | Test scanner folder connections, see the last successful check, set the QA schedule, and back up settings and filing decisions. |
 
@@ -58,6 +58,8 @@ In **Review**, select a scanner to see its pending reports. When the selected PD
 Classification uses the printed procedure. An explicit Daily or Monthly title can identify the category. A Siemens IEC Constancy summary with only noise and homogeneity/water can classify as Daily. Advanced IEC Constancy tests such as MTF, light markers, and table position can classify as Monthly, including standalone checks. Identifiable acceptance and reference-only reports can file under Other. Ambiguous documents stay available for a filing decision.
 
 A classified PDF can still need review because it printed NOT OK or Aborted, contains an out-of-limit measurement, or has incomplete extraction. On Windows, the update checks affected saved PDFs once in the background and keeps manual filings. Use **Acknowledge** after checking a filed exception. Zero-byte files, verified blank pages, and verified contents-only PDFs are skipped. Source files stay available in their original folders.
+
+Today and Monthly count a tracked test when a filed Monthly PDF has a named printed result or readable measurements for it. The checklist shows the evidence and links to the original page. Printed NOT OK results remain flagged, and an aborted run still needs a recorded result.
 
 ## Review import issues
 

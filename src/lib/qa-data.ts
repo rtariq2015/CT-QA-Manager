@@ -138,23 +138,6 @@ export const MONTHLY_CHECKLIST: { metric: MetricId; label: string }[] = [
   { metric: "externalmarker", label: "External light marker" },
   { metric: "contrast", label: "Contrast scale" },
 ];
-// Which monthly checklist tests were found in a scanner's filed Monthly reports for a month.
-export function monthlyCoverage(reports: Report[], scanner: ScannerId, month: string) {
-  const mine = reports.filter((r) => r.scanner === scanner && r.date.startsWith(month) && r.type === "Monthly");
-  const found = new Set(mine.flatMap((r) => r.measurements.map((m) => m.metric)));
-  const missing = MONTHLY_CHECKLIST.filter((c) => !found.has(c.metric));
-  const flagged = mine.reduce((n, r) => n + r.measurements.filter((m) => isOutOfLimit(m)).length, 0);
-  const last = mine.map((r) => r.date).sort().pop() ?? null;
-  return { done: MONTHLY_CHECKLIST.length - missing.length, missing, flagged, last, count: mine.length };
-}
-
-/** Monthly tests found only in reports still waiting in Review (not yet filed). */
-export function monthlyWaiting(reports: Report[], scanner: ScannerId, month: string): string[] {
-  const filed = new Set(reports.filter((r) => r.scanner === scanner && r.date.startsWith(month) && r.type === "Monthly").flatMap((r) => r.measurements.map((m) => m.metric)));
-  const waiting = new Set(reports.filter((r) => r.scanner === scanner && r.date.startsWith(month) && r.needsReview && r.suggested === "Monthly").flatMap((r) => r.measurements.map((m) => m.metric)));
-  return MONTHLY_CHECKLIST.filter((c) => waiting.has(c.metric) && !filed.has(c.metric)).map((c) => c.label);
-}
-
 export interface TrendWarning { scanner: ScannerId; metric: MetricId; label: string; context: string; direction: "rising" | "falling" }
 
 /** Heads-up when a Daily reading moved toward its limit on each of the last 3 reports (4 values), still inside limits. */

@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRight, CalendarDays, ChevronRight } from "lucide-react";
+import { AlertCircle, ArrowRight, CalendarDays, ChevronRight } from "lucide-react";
 import { useMemo } from "react";
-import { MONTHLY_CHECKLIST, SCANNERS, isScheduledQaDay, monthlyCoverage, trendWarnings } from "@/lib/qa-data";
-import { QA_ALERTS, strongestReportAlert } from "@/lib/qa-report-status";
+import { MONTHLY_CHECKLIST, SCANNERS, isScheduledQaDay, trendWarnings } from "@/lib/qa-data";
+import { monthlyCoverage } from "@/lib/qa-monthly-status";
+import { QA_ALERTS, reportAlert, strongestReportAlert } from "@/lib/qa-report-status";
 import { reportReviewLane } from "@/lib/qa-triage";
 import { useQa } from "@/lib/qa-store";
 import { Button } from "@/components/ui/button";
@@ -30,7 +31,8 @@ function Today() {
     const mine = reports.filter((report) => report.scanner === scanner.id);
     const daily = mine.filter((report) => report.type === "Daily" && report.date === today);
     const monthly = monthlyCoverage(mine, scanner.id, month);
-    return { scanner, daily, issue: strongestReportAlert(daily), monthly };
+    const monthlyFlags = monthly.filed.filter((report) => reportAlert(report)).length;
+    return { scanner, daily, issue: strongestReportAlert(daily), monthly, monthlyFlags };
   }), [reports, month, today]);
   const trends = useMemo(() => SCANNERS.flatMap((scanner) => trendWarnings(reports, scanner.id).slice(0, 2)
     .map((warning) => ({ ...warning, scannerName: scanner.name }))), [reports]);
@@ -59,14 +61,14 @@ function Today() {
             <p className="text-sm text-muted-foreground">{dailyExpected ? `${received} of ${SCANNERS.length} Daily reports received` : "Daily QA is not scheduled today"}</p>
           </div>
           <Link to="/monthly" search={{ month }} className="text-sm text-primary hover:underline">
-            {monthlyIncomplete ? (dueIn < 0 ? `Monthly QA · ${-dueIn} days overdue` : dueIn === 0 ? "Monthly QA due today" : `Monthly QA due ${month.slice(5)}/${schedule.dueDay}`) : "Monthly checklist"}
+            {monthlyIncomplete ? (dueIn < 0 ? `Monthly QA · due date passed` : dueIn === 0 ? "Monthly QA due today" : `Monthly QA due ${month.slice(5)}/${schedule.dueDay}`) : "Monthly checklist"}
           </Link>
         </div>
         <div className={`${scannerColumns} hidden border-y bg-muted/35 px-5 py-2 text-xs font-medium text-muted-foreground md:grid`} aria-hidden>
-          <span>Scanner</span><span>Latest Daily PDF</span><span>Daily status</span><span>Monthly tests</span>
+          <span>Scanner</span><span>Latest Daily PDF</span><span>Daily status</span><span>Monthly results</span>
         </div>
         <ul className="divide-y">
-          {scanners.map(({ scanner, daily, issue, monthly }) => {
+          {scanners.map(({ scanner, daily, issue, monthly, monthlyFlags }) => {
             const latest = daily[0];
             const target = issue?.report ?? latest;
             const status = issue && QA_ALERTS[issue.alert];
@@ -99,9 +101,10 @@ function Today() {
                   </Link>
                 )}
                 <Link to="/monthly" search={{ scanner: scanner.id, month }} className="group flex w-fit items-center gap-2 text-sm hover:text-primary"
-                  aria-label={`${scanner.name} Monthly · ${monthly.done} of ${MONTHLY_CHECKLIST.length} tests found`}>
+                  aria-label={`${scanner.name} Monthly · ${monthly.done} of ${MONTHLY_CHECKLIST.length} tests with results${monthlyFlags ? ` · ${monthlyFlags} ${monthlyFlags === 1 ? "report" : "reports"} flagged` : ""}`}>
                   <span className="text-xs text-muted-foreground md:sr-only">Monthly</span>
                   <span className="font-mono font-medium tabular-nums">{monthly.done}/{MONTHLY_CHECKLIST.length}</span>
+                  {monthlyFlags > 0 && <AlertCircle className="size-4 shrink-0 text-warn" aria-hidden />}
                   <span className="hidden h-1.5 w-9 overflow-hidden rounded-full bg-muted xl:block" aria-hidden>
                     <span className="block h-full rounded-full" style={{ width: `${monthly.done / MONTHLY_CHECKLIST.length * 100}%`, background: scanColor[scanner.id] }} />
                   </span>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { driftRatio, isOutOfLimit, monthlyCoverage, MONTHLY_CHECKLIST, type Measurement, type MetricId, type Report } from "./qa-data";
+import { driftRatio, isOutOfLimit, MONTHLY_CHECKLIST, type Measurement, type MetricId, type Report } from "./qa-data";
+import { monthlyCoverage } from "./qa-monthly-status";
 
 describe("measurement limits", () => {
   it("flags a water value of 4.5 HU outside the ±4 HU band", () => {
