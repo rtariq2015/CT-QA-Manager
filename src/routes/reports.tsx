@@ -101,7 +101,7 @@ function Reports() {
           <option value="all">All types</option><option>Daily</option><option>Monthly</option><option>Other</option>
         </select>
         <select value={resultFilter} onChange={e => { setResultFilter(e.target.value); box.current?.scrollTo(0, 0); }} className="h-11 rounded-md border bg-card px-3" aria-label="Printed result">
-          <option value="all">All results</option><option value="NOT OK">Printed NOT OK</option><option value="OK">Printed OK</option><option value="local">Local PDFs</option>
+          <option value="all">All results</option><option value="NOT OK">Printed NOT OK</option><option value="Aborted">Printed Aborted</option><option value="OK">Printed OK</option><option value="local">Local PDFs</option>
         </select>
       </div>
 
@@ -115,6 +115,7 @@ function Reports() {
                 <span className="min-w-0 flex-1 truncate"><ScannerLabel id={r.scanner} /></span>
                 <span className="hidden flex-1 truncate font-mono text-sm text-muted-foreground md:block">{tidyFileName(r)}</span>
                 {r.printedStatus === "NOT OK" && <Pill tone="bad">NOT OK</Pill>}
+                {r.printedStatus === "Aborted" && <Pill tone="warn">Aborted</Pill>}
                 <span className="hidden sm:inline"><Pill tone={r.needsReview ? "warn" : "muted"}>{r.needsReview ? filingLabel(r) : r.type}</Pill></span>
               </Button>
             ))}

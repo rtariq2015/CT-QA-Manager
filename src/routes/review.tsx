@@ -183,7 +183,7 @@ function Review() {
                   <ScannerLabel id={r.scanner} /><span className="shrink-0 text-xs text-muted-foreground">{r.date.slice(5)}</span>
                 </span>
                 <span className={cn("text-xs", r.printedStatus === "NOT OK" ? "text-destructive" : "text-muted-foreground")}>
-                  {r.autoFiled ? `${r.type} · ` : ""}{r.printedStatus === "NOT OK" ? "Printed NOT OK" : r.autoFiled ? "Review needed" : "Filing pending"}
+                  {r.autoFiled ? `${r.type} · ` : ""}{r.printedStatus === "NOT OK" ? "Printed NOT OK" : r.printedStatus === "Aborted" ? "Aborted" : r.autoFiled ? "Review needed" : "Filing pending"}
                 </span>
               </Button>
             ))}

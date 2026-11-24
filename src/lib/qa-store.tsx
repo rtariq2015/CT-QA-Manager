@@ -6,6 +6,7 @@ import { reviewReason, triage } from "./qa-triage";
 import { saveArchivedReport } from "./qa-library";
 import { desktop } from "./qa-desktop";
 import { log } from "./qa-logger";
+import { needsParserRefresh, REPORT_PARSER_REVISION } from "./qa-parser-upgrade";
 import { localDate, type Report, type ReportType } from "./qa-data";
 import { DEFAULT, normalizeConfig, SETTINGS_KEY, type Config } from "./qa-settings";
 
@@ -66,9 +67,30 @@ export function QaProvider({ children }: { children: ReactNode }) {
   };
   useEffect(() => {
     let active = true;
-    void desktop()?.listFailedImports().then((entries) => {
+    const bridge = desktop();
+    void bridge?.listFailedImports().then(async (entries) => {
       if (!active) return;
       for (const entry of entries.sort((a, b) => a.at.localeCompare(b.at))) addFailedImport(entry);
+      const migrationKey = `qa-inbox-checked-${REPORT_PARSER_REVISION}`;
+      const candidates = entries.filter(({ code }) => code === "scanner-unrecognized");
+      if (!candidates.length || localStorage.getItem(migrationKey)) return;
+      const { isEmptyInboxPdf } = await import("./qa-pdf");
+      let skipped = 0;
+      let errors = 0;
+      for (const entry of candidates) {
+        if (!active) return;
+        try {
+          if (!await isEmptyInboxPdf(entry.fileName, await bridge.openFailedImport(entry.id))) continue;
+          await bridge.reviewFailedImport(entry.id);
+          if (!active) return;
+          reviewedIds.current.add(entry.id);
+          setFailedImports((current) => current.filter(({ id }) => id !== entry.id));
+          skipped++;
+        } catch { errors++; }
+      }
+      if (!active) return;
+      if (!errors) localStorage.setItem(migrationKey, "1");
+      if (skipped || errors) log(errors ? "warning" : "info", "file", `Review Inbox check: ${skipped} empty PDFs skipped, ${errors} could not be checked`);
     }).catch(() => log("error", "folder", "Could not load the Review Inbox"));
     return () => { active = false; };
   }, [addFailedImport]);
@@ -210,35 +232,36 @@ export function QaProvider({ children }: { children: ReactNode }) {
     if (!loaded || !catalogLoaded || filingBusy || startupFilingStarted.current) return;
     startupFilingStarted.current = true;
     const organize = async () => {
-      const candidates = latestReports.current.filter((report) =>
-        report.needsReview && report.program === undefined && report.originalUrl && !currentOverrides.current[report.id]);
+      const candidates = latestReports.current.filter((report) => needsParserRefresh(report) && !currentOverrides.current[report.id]);
       if (!desktop() || !candidates.length) return;
       const scan = startScan("saved-catalog");
       writingArchive.current = true;
       setFilingBusy(true);
-      let filedCount = 0;
+      let organized = 0;
+      let readingsRecovered = 0;
       let errors = 0;
       try {
-        const { recoverPrintedProgram } = await import("./qa-pdf");
+        const { recoverArchivedReport } = await import("./qa-pdf");
         for (const report of candidates) {
           const start = performance.now();
           try {
-            const { updated, bytes } = await recoverPrintedProgram(report);
+            const { updated, bytes } = await recoverArchivedReport(report);
             const current = latestReports.current.find(({ id }) => id === report.id);
-            if (current?.originalUrl !== report.originalUrl || currentOverrides.current[report.id]) continue;
+            if (!current || current.originalUrl !== report.originalUrl || currentOverrides.current[report.id]) continue;
             const filed = triage(updated);
-            // Save the recovered program even when the PDF stays in Other, so it is checked only once.
+            // Persist the parser revision even if the file stays where it was.
             const saved = await saveArchivedReport(filed, new Uint8Array(bytes), updated, undefined, true);
             setLocalReports((all) => all.map((item) => item.id === report.id && item.originalUrl === report.originalUrl ? updated : item));
             scan.recordRead({ report: filed, cached: false, readMs: Math.round(performance.now() - start), saved });
-            if (filed.autoFiled) filedCount++;
+            if (filed.autoFiled && (!current.autoFiled || filed.type !== current.type)) organized++;
+            readingsRecovered += Math.max(0, filed.measurements.length - report.measurements.length);
           } catch (error) {
             scan.recordFailure(error);
             errors++;
-            log("warning", "filing", `Could not check the filing category for ${report.fileName}`);
+            log("warning", "filing", `Could not reread saved PDF ${report.fileName}`);
           }
         }
-        log(errors ? "warning" : "info", "filing", `Automatic catalog pass: ${filedCount} filed, ${errors} could not be checked`);
+        log(errors ? "warning" : "info", "filing", `Saved catalog check: ${candidates.length} checked, ${organized} organized, ${readingsRecovered} readings recovered, ${errors} errors`);
       } finally {
         scan.finish(candidates.length);
         writingArchive.current = false;

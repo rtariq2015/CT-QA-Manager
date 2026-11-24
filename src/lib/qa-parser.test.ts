@@ -2,10 +2,57 @@ import { triage } from "./qa-triage";
 import { describe, expect, it } from "vitest";
 import { parseSiemensPages, type PdfTextPage } from "./qa-parser";
 import { isOutOfLimit, SCANNERS } from "./qa-data";
+import { hasOnlyContentsAndPageNumbers } from "./qa-pdf-content";
+import { needsParserRefresh, refreshParsedReport, REPORT_PARSER_REVISION } from "./qa-parser-upgrade";
 
 const identity: PdfTextPage = { page: 1, lines: ["Product Name SOMATOM Drive", "Software Version syngo CT VB30A_SP10", "2026-11-11 07:05:14"] };
 const summary: PdfTextPage = { page: 2, lines: ["1. Quality Daily Noise OK................ 3", "2. Quality Daily Homogeneity NOT OK................ 6"] };
 const read = (lines: string[]) => parseSiemensPages([identity, summary, { page: 3, lines }], "sample.pdf", 54);
+
+it("files a standalone table-position check and retains its separate printed movement limits", () => {
+  const report = parseSiemensPages([identity, { page: 2, lines: [
+    "Quality IEC Constancy Table Position", "Test Results NOT OK", "Continuous Move Stepwise Move",
+    "Position 1 -10.0 mm -8.0 mm", "Tolerance -11.0 ... -9.0 mm -10.5 ... -9.5 mm",
+  ] }], "check.pdf", 20);
+  expect(triage(report)).toMatchObject({ type: "Monthly", autoFiled: true, needsReview: true, printedStatus: "NOT OK" });
+  expect(report.measurements).toMatchObject([
+    { context: "Position 1 · Continuous", value: -10, lower: -11, upper: -9 },
+    { context: "Position 1 · Stepwise", value: -8, lower: -10.5, upper: -9.5 },
+  ]);
+});
+
+it("reads the reference marker tolerance without classifying the reference-only run as routine", () => {
+  const report = parseSiemensPages([identity, { page: 2, lines: [
+    "Quality IEC Constancy Reference External Lightm.", "Test Results OK", "Result [mm]", "0.50", "Tolerance", "-1.00 ... 1.00",
+  ] }], "monthly.pdf", 20);
+  expect(triage(report)).toMatchObject({ type: "Other", needsReview: false, printedStatus: "OK" });
+  expect(report.measurements[0]).toMatchObject({ metric: "externalmarker", value: 0.5, lower: -1, upper: 1 });
+});
+
+it("does not infer an OK result from one readable mode alongside an unreadable one", () => {
+  const report = parseSiemensPages([identity, { page: 2, lines: [
+    "Quality IEC Constancy MTF", "Test Parameters Test Results OK", "Test Parameters Test Results —",
+  ] }], "check.pdf", 20);
+  expect(report).toMatchObject({ printedStatus: "Not available", needsReview: true });
+});
+
+it("distinguishes an outline-only PDF from one with text or inconsistent page markers", () => {
+  const cover = { page: 1, lines: ["Table of Contents", "2026-07-01 01:00:00 Page: 1 / 2"] };
+  const last = { page: 2, lines: ["2026-07-01 01:00:00 Page: 2 / 2"] };
+  expect(hasOnlyContentsAndPageNumbers([cover, last])).toBe(true);
+  expect(hasOnlyContentsAndPageNumbers([cover, { ...last, lines: ["An unreadable-looking report", ...last.lines] }])).toBe(false);
+  expect(hasOnlyContentsAndPageNumbers([cover, { ...last, lines: ["2026-07-02 01:00:00 Page: 2 / 2"] }])).toBe(false);
+});
+
+it("keeps a saved NOT OK and its readings during the one-time catalog recheck", () => {
+  const saved = { ...read(["1. Quality Daily Noise", "Results for System A", "Slice 1 6.1 HU 2.5 ... 4.4 HU"]), originalUrl: "ctqa://app/saved-report/sample.pdf" };
+  const parsed = parseSiemensPages([identity, { page: 2, lines: ["1. Quality Daily Homogeneity OK................ 6"] }], "sample.pdf", 54);
+  expect(needsParserRefresh(saved)).toBe(true);
+  const upgraded = refreshParsedReport(saved, parsed);
+  expect(upgraded).toMatchObject({ printedStatus: "NOT OK", parserRevision: REPORT_PARSER_REVISION, measurements: saved.measurements });
+  expect(upgraded.printedSections?.find(({ label }) => label === "Homogeneity")?.status).toBe("NOT OK");
+  expect(needsParserRefresh(upgraded)).toBe(false);
+});
 
 describe("Siemens printed report rules", () => {
   it("preserves the Drive acceptance exception without suggesting Monthly", () => {

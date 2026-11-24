@@ -20,7 +20,7 @@ export function ReportPreview({ report, highlightPage, initialView = "readings" 
       <header className="space-y-3 border-b pb-4">
         <div className="flex flex-wrap items-center gap-2">
           <Pill tone="muted">Local PDF</Pill>
-          <Pill tone={status === "NOT OK" ? "bad" : status === "OK" ? "ok" : "muted"}>Printed result: {status}</Pill>
+          <Pill tone={status === "NOT OK" ? "bad" : status === "Aborted" ? "warn" : status === "OK" ? "ok" : "muted"}>Printed result: {status}</Pill>
           <Pill tone="muted">{filingLabel(report)}</Pill>
         </div>
         <h2 className="break-words text-lg font-semibold">{scanner.model}</h2>
@@ -46,7 +46,7 @@ export function ReportPreview({ report, highlightPage, initialView = "readings" 
         if (!ms.length && !sections.length && page !== 1) return null;
         return <section key={page} id={`page-${page}`} aria-label={`Page ${page}`} className={`min-w-0 rounded-md border bg-card p-4 text-sm ${highlightPage === page ? "ring-2 ring-primary" : ""}`}>
           <div className="flex flex-wrap justify-between gap-2 border-b pb-2 font-mono text-xs text-muted-foreground"><span>SIEMENS · {report.software ?? scanner.software}</span><span>Page {page}/{report.pages}</span></div>
-          {sections.length > 0 && <ul className="my-3 space-y-2">{sections.map(s => <li key={s.label} className="flex flex-wrap items-center justify-between gap-2"><span>{s.label}</span><Pill tone={s.status === "NOT OK" ? "bad" : "ok"}>{s.status}</Pill></li>)}</ul>}
+          {sections.length > 0 && <ul className="my-3 space-y-2">{sections.map(s => <li key={s.label} className="flex flex-wrap items-center justify-between gap-2"><span>{s.label}</span><Pill tone={s.status === "NOT OK" ? "bad" : s.status === "Aborted" ? "warn" : s.status === "OK" ? "ok" : "muted"}>{s.status}</Pill></li>)}</ul>}
           {ms.length > 0 && <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[640px] text-left">
             <thead className="text-xs text-muted-foreground"><tr>{["Test / context", "Value", "Reference", "Limits", "Result"].map(h => <th key={h} className="px-2 py-2 font-normal">{h}</th>)}</tr></thead>
             <tbody>{ms.map((m, i) => <tr key={i} className={`border-t ${isOutOfLimit(m) ? "text-destructive" : ""}`}>

@@ -9,6 +9,8 @@ export function printedProgram(text: string): PrintedProgram {
   if (daily && monthly) return "unknown";
   if (monthly) return "monthly";
   if (daily) return "daily";
+  const constancyTests = [...text.matchAll(/^(?:[ \t]*\d+\.)?[ \t]*Quality[ \t]+IEC[ \t]+Constancy[ \t]+(\S[^\n]*)/gim)];
+  if (constancyTests.length && constancyTests.every((row) => /^Reference\s/i.test(row[1] ?? ""))) return "other";
   return /\bIEC\s+Constancy\b/i.test(text) ? "constancy" : "unknown";
 }
 
@@ -18,7 +20,7 @@ export function inferRoutineFiling(report: Report): Exclude<ReportType, "Other">
   if (report.program !== "constancy") return undefined;
 
   const tests = report.printedSections?.map(({ label }) => label.toLowerCase().trim().replace(/\s+/g, " ")) ?? [];
-  const advanced = /\b(?:mtf|light\s*marker|topogram|slice thickness|table position(?:ing)?|contrast scale)\b/;
+  const advanced = /^(?:mtf\b|light\s*marker\b|(?:external|sag\.\/cor\.)\s+lightm\.|topogram\b|slice(?: thickness)?$|table position\b|contrast(?: scale)?$)/;
   if (tests.some((label) => advanced.test(label)) ||
       report.measurements.some(({ metric }) => ["mtf50", "mtf10", "sagcor", "lightmarker", "externalmarker", "topogram", "table", "slice"].includes(metric))) return "Monthly";
   if (tests.length === 2 && tests.includes("noise") &&

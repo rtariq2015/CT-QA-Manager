@@ -39,16 +39,17 @@ const UNIT: Record<MetricId, string> = { water: "HU", noise: "HU", homogeneity: 
 
 export function parseVa40Pages(pages: PdfTextPage[], filename: string, sizeKb: number): Report {
   const all = pages.flatMap(p => p.lines).join("\n").replaceAll("\u00a0", " ");
-  // Summary rows; the OK/Not OK may sit on the following line.
+  // Summary rows; the printed result may sit on the following line.
   const sections: PrintedSection[] = [];
   let stamp: { date: string; time: string } | undefined;
   const summaryPages = pages.filter(p => p.lines.some(l => /^\s*Summary(?:\s*\(continued\))?\s*$/i.test(l)));
   for (const summaryPage of summaryPages) {
     const text = summaryPage.lines.join("\n").replaceAll("\u00a0", " ");
-    const row = /([A-Z][A-Za-z/ ]+?)(?:\s*\(IEC Constancy\))?\s+(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)\s*\n?\s*(Not\s+OK|OK)\b/gi;
+    const row = /([A-Z][A-Za-z/ ]+?)(?:\s*\(IEC Constancy\))?\s+(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)\s*\n?\s*(Not\s+OK|OK|Aborted)\b/gi;
     for (const m of text.matchAll(row)) {
       const label = (m[1] ?? "").replace(/^(?:Function Start Time Result|Result)\s*/, "").trim();
-      sections.push({ label, status: /not/i.test(m[9] ?? "") ? "NOT OK" : "OK", page: summaryPage.page });
+      const result = (m[9] ?? "").toUpperCase();
+      sections.push({ label, status: result === "OK" ? "OK" : result === "ABORTED" ? "Aborted" : "NOT OK", page: summaryPage.page });
       if (!stamp) stamp = { date: iso(m[2]!, m[3]!, m[4]!), time: time24(m[5]!, m[6]!, m[7]!, m[8]!) };
     }
   }
@@ -146,7 +147,7 @@ export function parseVa40Pages(pages: PdfTextPage[], filename: string, sizeKb: n
   }
   // Centre water values repeat in the homogeneity table: keep one per mode/slice.
   const unique = distinctMeasurements(measurements, true);
-  const printedStatus: PrintedStatus = sections.some(s => s.status === "NOT OK") ? "NOT OK" : sections.length ? "OK" : "Not available";
+  const printedStatus: PrintedStatus = sections.some(s => s.status === "NOT OK") ? "NOT OK" : sections.some(s => s.status === "Aborted") ? "Aborted" : sections.length ? "OK" : "Not available";
   const labels = sections.map(s => s.label);
   const daily = sections.length === 2 && labels.includes("Noise") && labels.includes("Homogeneity");
   const suggested = /Acceptance/.test(all.slice(0, 400)) ? "Other" : daily ? "Daily" : sections.length > 2 && /IEC Constancy/.test(all.slice(0, 400)) ? "Monthly" : "Other";

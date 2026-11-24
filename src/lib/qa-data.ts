@@ -1,4 +1,5 @@
 import type { PrintedProgram } from "./qa-filing-evidence";
+import type { PrintedSection, PrintedStatus } from "./qa-parser";
 
 export type ReportType = "Daily" | "Monthly" | "Other";
 export type ScannerId = "xcite" | "flash" | "edge" | "drive";
@@ -50,14 +51,15 @@ export interface Report {
   type: ReportType;
   suggested: ReportType;
   program?: PrintedProgram;
+  parserRevision?: number;
   confidence: "certain" | "likely" | "uncertain";
   needsReview: boolean;
   autoFiled?: boolean;
   measurements: Measurement[];
   pages: number;
   source?: "uploaded";
-  printedStatus?: "OK" | "NOT OK" | "Not available";
-  printedSections?: { label: string; status: "OK" | "NOT OK" | "Not available"; page: number }[];
+  printedStatus?: PrintedStatus;
+  printedSections?: PrintedSection[];
   software?: string;
   extractionNotes?: string[];
   extractionIncomplete?: boolean;

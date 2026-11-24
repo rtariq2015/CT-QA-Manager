@@ -58,7 +58,7 @@ export function FolderExplorer({ reports }: { reports: Report[] }) {
                   <span className="block truncate font-medium">{tidyFileName(r)}</span>
                   <span className="block truncate text-xs text-muted-foreground">{r.originalUrl ? `Original: ${r.fileName} · click to open` : "Original PDF unavailable"}</span>
                 </span>
-                <Pill tone={r.printedStatus === "NOT OK" ? "bad" : "ok"}>{r.printedStatus === "NOT OK" ? "NOT OK" : "OK"}</Pill>
+                <Pill tone={r.printedStatus === "NOT OK" ? "bad" : r.printedStatus === "Aborted" ? "warn" : r.printedStatus === "OK" ? "ok" : "muted"}>{r.printedStatus ?? "Not available"}</Pill>
               </button>
             </li>
           ))}

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseSiemensPages, type PdfTextPage } from "./qa-parser";
 import { triage } from "./qa-triage";
 
-const footer = "Maimonides Medical Center | SOMATOM X.cite | Serial Number: 123193 | Customer ID: 7645";
+const footer = "Example Imaging Center | SOMATOM X.cite | Serial Number: 123456 | Customer ID: 7890";
 const cover: PdfTextPage = { page: 1, lines: ["SOMATOM X.cite", "Daily QA", footer] };
 const dailySummary: PdfTextPage = { page: 3, lines: ["Summary", "Function Start Time Result", "Homogeneity (IEC Constancy) 08/01/2025 6:16:19 AM", " OK", "Noise (IEC Constancy) 08/01/2025 6:17:02 AM", " OK", footer] };
 
@@ -70,4 +70,12 @@ it("keeps a printed exception from a summary explicitly marked continued", () =>
   }], "summary-continued.pdf", 10);
   expect(result.printedSections).toContainEqual({ label: "Noise", status: "NOT OK", page: 4 });
   expect(triage(result).needsReview).toBe(true);
+});
+
+it("keeps an aborted X.cite Daily report in the exception queue", () => {
+  const result = parseSiemensPages([cover, {
+    page: 2, lines: ["Summary", "Phantom Position Check 07/01/2026 6:00:00 AM Aborted"],
+  }], "aborted.pdf", 5);
+  expect(triage(result)).toMatchObject({ type: "Daily", autoFiled: true, needsReview: true, printedStatus: "Aborted" });
+  expect(result.printedSections).toEqual([{ label: "Phantom Position Check", status: "Aborted", page: 2 }]);
 });

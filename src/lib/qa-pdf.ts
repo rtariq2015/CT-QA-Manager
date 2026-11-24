@@ -5,6 +5,8 @@ import { PdfReadError, pdfReadErrorCode } from "./qa-read-error";
 import type { Report } from "./qa-data";
 import { desktop } from "./qa-desktop";
 import { saveArchivedReport } from "./qa-library";
+import { hasOnlyContentsAndPageNumbers } from "./qa-pdf-content";
+import { refreshParsedReport, REPORT_PARSER_REVISION } from "./qa-parser-upgrade";
 
 const sourceUrls = new WeakMap<Report, string>();
 
@@ -156,12 +158,25 @@ async function readInner(filename: string, bytes: ArrayBuffer) {
       }
       if (blank) throw new PdfReadError("empty-pdf", "The PDF has no page content");
     }
-    return parseSiemensPages(pages, filename, sizeKb);
+    if (hasOnlyContentsAndPageNumbers(pages)) {
+      const textOps = new Set<number>([pdfjs.OPS.transform, pdfjs.OPS.save, pdfjs.OPS.restore, pdfjs.OPS.beginText,
+        pdfjs.OPS.dependency, pdfjs.OPS.setFont, pdfjs.OPS.setTextMatrix, pdfjs.OPS.showText, pdfjs.OPS.endText]);
+      let contentsOnly = true;
+      for (let n = 1; n <= document.numPages; n++) {
+        const page = await document.getPage(n);
+        if (!(await page.getOperatorList()).fnArray.every((op) => textOps.has(op)) || (await page.getAnnotations()).length) {
+          contentsOnly = false;
+          break;
+        }
+      }
+      if (contentsOnly) throw new PdfReadError("empty-pdf", "The PDF has only a contents heading and page numbers");
+    }
+    return { ...parseSiemensPages(pages, filename, sizeKb), parserRevision: REPORT_PARSER_REVISION };
   } finally { await task.destroy(); }
 }
 
-/** Recover the printed procedure for older catalog records without replacing their QA results. */
-export async function recoverPrintedProgram(report: Report) {
+/** Recheck saved PDFs locally without discarding previously recorded readings or exceptions. */
+export async function recoverArchivedReport(report: Report) {
   const response = await fetch(report.originalUrl!);
   if (!response.ok) throw new Error("The saved PDF could not be opened");
   const bytes = await response.arrayBuffer();
@@ -169,6 +184,16 @@ export async function recoverPrintedProgram(report: Report) {
   if (parsed.scanner !== report.scanner || parsed.date !== report.date || parsed.time !== report.time) {
     throw new Error("The saved PDF does not match this report");
   }
-  const updated = { ...report, program: parsed.program ?? "unknown" as const };
+  const updated = refreshParsedReport(report, parsed);
   return { updated, bytes };
+}
+
+export async function isEmptyInboxPdf(filename: string, bytes: Uint8Array) {
+  if (!bytes.byteLength) return true;
+  try {
+    await readInner(filename, new Uint8Array(bytes).buffer);
+    return false;
+  } catch (error) {
+    return pdfReadErrorCode(error) === "empty-pdf";
+  }
 }
