@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import type { Measurement, Report } from "./qa-data";
 import { monthlyChecklistRows, monthlyCoverage } from "./qa-monthly-status";
-import { reportAlert, strongestReportAlert } from "./qa-report-status";
+import { calendarDayResults, reportAlert, strongestReportAlert } from "./qa-report-status";
 
 const sample: Report = {
   id: "test-clean", date: "2026-07-05", time: "08:00:00", fileName: "example.pdf",
@@ -9,6 +9,46 @@ const sample: Report = {
   sizeKb: 16, measurements: [], needsReview: false, printedStatus: "OK",
 };
 const mtf: Measurement = { metric: "mtf50", unit: "lp/cm", value: 10, lower: 9, upper: 12, baseline: 10, context: "Body mode", page: 2 };
+const daily: Report = { ...sample, id: "daily-ok", type: "Daily", suggested: "Daily" };
+
+it.each(["Monthly", "Other"] as const)("shows a passing Daily separately from a failed %s report", (type) => {
+  const flagged: Report = { ...sample, type, time: "09:00:00", printedStatus: "NOT OK" };
+  expect(calendarDayResults([flagged, daily])).toMatchObject({
+    latestDaily: { report: daily, result: { tone: "ok", label: "Printed OK" } },
+    otherAlert: { report: flagged, alert: "not-ok" },
+  });
+  expect(calendarDayResults([flagged])).toEqual({ latestDaily: undefined, otherAlert: { report: flagged, alert: "not-ok" } });
+});
+
+it("shows the latest Daily run and keeps a failed earlier run visible", () => {
+  const earlier: Report = { ...daily, id: "daily-failed", time: "07:45", printedStatus: "NOT OK" };
+  expect(calendarDayResults([earlier, daily])).toMatchObject({
+    latestDaily: { report: daily, result: { tone: "ok" } },
+    otherAlert: { report: earlier, alert: "not-ok" },
+  });
+  const later = { ...earlier, time: "08:15:00" };
+  expect(calendarDayResults([daily, later])).toMatchObject({
+    latestDaily: { report: later, result: { tone: "bad", label: "Printed NOT OK" } },
+    otherAlert: undefined,
+  });
+});
+
+it("keeps the Daily date flagged when reports share a timestamp and disagree", () => {
+  const outsideLimit: Report = { ...daily, id: "daily-outside", time: "08:00", measurements: [{ ...mtf, value: 13 }] };
+  for (const reports of [[daily, outsideLimit], [outsideLimit, daily]]) {
+    expect(calendarDayResults(reports).latestDaily).toMatchObject({
+      report: outsideLimit, result: { tone: "bad", label: "Outside printed limits" },
+    });
+  }
+});
+
+it("keeps aborted or unreadable latest Daily runs from showing a pass", () => {
+  const retest = { ...daily, id: "daily-retest", time: "08:00:01" };
+  const aborted = { ...retest, printedStatus: "Aborted" as const };
+  const unavailable = { ...retest, printedStatus: "Not available" as const };
+  expect(calendarDayResults([daily, aborted]).latestDaily?.result).toMatchObject({ label: "Aborted", tone: "warn" });
+  expect(calendarDayResults([daily, unavailable]).latestDaily?.result).toMatchObject({ label: "Result unavailable", tone: "warn" });
+});
 
 it("retains a same-day exception after acknowledgement and a later printed OK", () => {
   const aborted: Report = { ...sample, id: "test-aborted", time: "07:00:00", printedStatus: "Aborted", needsReview: false };

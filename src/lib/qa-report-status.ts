@@ -25,3 +25,25 @@ export function strongestReportAlert(reports: Report[]) {
   }
   return strongest;
 }
+
+export function reportResult(report: Report) {
+  const alert = reportAlert(report);
+  if (alert) return QA_ALERTS[alert];
+  if (report.printedStatus === "OK") return { label: "Printed OK", tone: "ok", rank: -1 } as const;
+  return { label: "Result unavailable", tone: report.type === "Daily" ? "warn" : "muted", rank: 0 } as const;
+}
+
+/** Reports for one scanner on one calendar date. */
+export function calendarDayResults(reports: Report[]) {
+  let latestDaily: { report: Report; result: ReturnType<typeof reportResult>; time: string } | undefined;
+  for (const report of reports) {
+    if (report.type !== "Daily") continue;
+    const time = report.time.padEnd(8, ":00");
+    const result = reportResult(report);
+    if (!latestDaily || time > latestDaily.time || (time === latestDaily.time && result.rank > latestDaily.result.rank)) {
+      latestDaily = { report, result, time };
+    }
+  }
+  const otherAlert = strongestReportAlert(reports.filter((report) => report !== latestDaily?.report));
+  return { latestDaily, otherAlert };
+}

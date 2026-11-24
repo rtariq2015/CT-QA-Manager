@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { importQaPdf } from "@/lib/qa-pdf";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { QA_ALERTS, reportAlert, strongestReportAlert } from "@/lib/qa-report-status";
+import { calendarDayResults, QA_ALERTS, reportAlert, reportResult } from "@/lib/qa-report-status";
 import { dateFilter, monthFilter, scannerFilter } from "@/lib/qa-route-filters";
 
 const RESULT_FILTER = ["NOT OK", "Aborted", "OK", "exceptions", "out-of-limit", "local"] as const;
@@ -186,6 +186,14 @@ function Reports() {
 
 const monthLabel = (month: string) => new Date(month + "-01T00:00:00Z").toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
+const dayTone = {
+  ok: "border-ok/40 bg-ok/15 hover:bg-ok/25",
+  bad: "border-destructive/50 bg-destructive/15 hover:bg-destructive/25",
+  warn: "border-warn/50 bg-warn/15 hover:bg-warn/25",
+  miss: "border-dashed border-warn",
+  muted: "border-transparent text-muted-foreground/50",
+};
+
 function matchesResult(report: Report, filter: ReportSearch["result"]) {
   if (!filter) return true;
   if (filter === "local") return report.source === "uploaded";
@@ -249,6 +257,8 @@ function Calendar({ reports, scanner, month, onScanner, onMonth, onReport }: { r
     return () => document.removeEventListener("pointerdown", onDown);
   }, [day]);
   const dayReports = day ? byDate.get(day) ?? [] : [];
+  const dayDaily = calendarDayResults(dayReports).latestDaily?.report;
+  const orderedDayReports = dayDaily ? [dayDaily, ...dayReports.filter((report) => report !== dayDaily)] : dayReports;
   const counted = cells.filter((d): d is string => !!d && d <= today && d >= firstSeen && isScheduledQaDay(d, schedule.days));
   const got = counted.filter((d) => byDate.get(d)?.some((r) => r.type === "Daily")).length;
   return (
@@ -274,19 +284,19 @@ function Calendar({ reports, scanner, month, onScanner, onMonth, onReport }: { r
         {cells.map((d, i) => {
           if (!d) return <div key={`e${i}`} />;
           const rs = byDate.get(d) ?? [];
-          const daily = rs.some((r) => r.type === "Daily");
           const monthly = rs.some((r) => r.type === "Monthly");
-          const issue = strongestReportAlert(rs);
-          const alert = issue && QA_ALERTS[issue.alert];
+          const { latestDaily, otherAlert } = calendarDayResults(rs);
+          const alert = otherAlert && QA_ALERTS[otherAlert.alert];
           const future = d > today;
           const expected = !future && d >= firstSeen && isScheduledQaDay(d, schedule.days);
-          const state = alert?.tone ?? (daily ? "ok" : expected ? "miss" : "none");
+          const state = latestDaily?.result.tone ?? (expected ? "miss" : "muted");
+          const dailyLabel = latestDaily ? `Latest Daily · ${latestDaily.result.label}` : "No Daily report";
+          const otherLabel = otherAlert && alert ? `Other report alert · ${otherAlert.report.type} · ${alert.label}` : undefined;
+          const title = [dailyLabel, otherLabel].filter(Boolean).join(". ");
           return (
-            <Button variant="ghost" key={d} data-day-cell aria-label={`${d}${alert ? `: ${alert.label}` : daily ? ": Daily received" : expected ? ": No Daily report" : ""}`} title={alert?.label} disabled={future && !rs.length} onClick={(e) => open(d, e.currentTarget)} aria-pressed={d === day}
+            <Button variant="ghost" key={d} data-day-cell aria-label={`${d} · ${title}`} title={title} disabled={future && !rs.length} onClick={(e) => open(d, e.currentTarget)} aria-pressed={d === day}
               className={cn("relative flex h-12 px-0 flex-col items-center justify-center rounded-md border text-sm sm:h-14",
-                state === "ok" && "border-ok/40 bg-ok/15", state === "bad" && "border-destructive/50 bg-destructive/15",
-                state === "warn" && "border-warn/50 bg-warn/15",
-                state === "miss" && "border-2 border-dashed border-warn", state === "none" && "border-transparent text-muted-foreground/50",
+                dayTone[state], state === "miss" && "border-2",
                 d === day && "ring-2 ring-primary", d === today && "font-bold")}>
               {Number(d.slice(8))}
               {alert && <AlertCircle className={cn("absolute right-1 top-1 size-3", alert.tone === "bad" ? "text-destructive" : "text-warn")} aria-hidden />}
@@ -304,22 +314,39 @@ function Calendar({ reports, scanner, month, onScanner, onMonth, onReport }: { r
             {dayReports.length === 0 ? (
               <p className="mt-1 text-sm text-warn">No report available for this date.</p>
             ) : (
-              <ul className="mt-2 flex flex-col gap-1">
-                {dayReports.map((r) => {
-                  const alert = reportAlert(r);
-                  return <li key={r.id}><Button variant="ghost" onClick={() => { close(); onReport(r); }} className="flex h-auto w-full items-center gap-2 whitespace-normal rounded-md px-2 py-3 text-left">
-                    <FileText className="size-4 shrink-0" />
-                    <span className="min-w-0 flex-1"><span className="block">{r.type} · {r.time}</span><span className="block text-xs text-muted-foreground">{r.originalUrl ? "Open PDF report" : "Open report details"}</span></span>
-                    <Pill tone={alert ? QA_ALERTS[alert].tone : r.printedStatus === "OK" ? "ok" : "muted"}>{alert ? QA_ALERTS[alert].label : r.printedStatus === "OK" ? "Printed OK" : "Result unavailable"}</Pill>
-                  </Button></li>;
-                })}
-              </ul>
+              <>
+                {!dayDaily && <p className="mt-1 px-2 text-sm text-muted-foreground">No Daily report</p>}
+                <ul className="mt-2 flex max-h-[min(370px,50vh)] flex-col gap-1 overflow-y-auto">
+                  {orderedDayReports.map((r) => {
+                    const { label, tone } = reportResult(r);
+                    return <li key={r.id}>
+                      <Button variant="ghost" onClick={() => { close(); onReport(r); }}
+                        className={cn("flex h-auto w-full items-center gap-2 whitespace-normal rounded-md px-2 py-2 text-left", r === dayDaily && "bg-muted/50")}>
+                        <FileText className="size-4 shrink-0" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block">{r === dayDaily ? "Latest Daily" : r.type} · {r.time}</span>
+                          <span className="block text-xs text-muted-foreground">{r.originalUrl ? "Open PDF report" : "Open report details"}</span>
+                        </span>
+                        <Pill tone={tone}>{label}</Pill>
+                      </Button>
+                    </li>;
+                  })}
+                </ul>
+              </>
             )}
           </div>
         )}
       </div>
-      <p className="mt-3 text-sm text-muted-foreground">{got} of {counted.length} days received</p>
-
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs text-muted-foreground">
+        <ul className="flex flex-wrap gap-x-4 gap-y-2" aria-label="Calendar legend">
+          <li className="flex items-center gap-1.5"><span className={cn("size-3 rounded-sm border", dayTone.ok)} aria-hidden />Daily OK</li>
+          <li className="flex items-center gap-1.5"><span className={cn("size-3 rounded-sm border", dayTone.bad)} aria-hidden />Daily flagged</li>
+          <li className="flex items-center gap-1.5"><span className={cn("size-3 rounded-sm border", dayTone.warn)} aria-hidden />Daily needs review</li>
+          <li className="flex items-center gap-1.5"><span className={cn("size-3 rounded-sm border", dayTone.miss)} aria-hidden />Daily missing</li>
+          <li className="flex items-center gap-1.5"><AlertCircle className="size-3 text-destructive" aria-hidden />Alert on another report</li>
+        </ul>
+        <p>Daily reports received on {got} of {counted.length} scheduled days</p>
+      </div>
     </section>
   );
 }
