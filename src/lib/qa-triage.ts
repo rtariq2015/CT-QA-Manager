@@ -27,6 +27,10 @@ export function reviewReason(r: Report): string | null {
   return code ? reviewLabels[code] : null;
 }
 
+export function reportReviewLane(report: Report) {
+  return reviewReasonCode(report) === "non-routine-report" ? "filing" : "exceptions";
+}
+
 /** A filing category and a review flag describe different things. */
 export function triage(r: Report): Report {
   if (!r.needsReview) return r;

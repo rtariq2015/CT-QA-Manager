@@ -4,15 +4,15 @@
 
 [**Download for Windows x64**](https://github.com/rtariq2015/CT-QA-Manager/releases/latest/download/CT-QA-Manager-Windows-x64.zip) · [Release notes](https://github.com/rtariq2015/CT-QA-Manager/releases/latest) · [CT QA Manager Pro](https://github.com/rtariq2015/QA-Manger)
 
-![CT QA Manager dashboard on first launch](docs/images/today.png)
+![CT QA Manager Today view with example scanner statuses](docs/images/today.png)
 
 ## Start on Windows
 
 1. Download the Windows ZIP and extract the full folder to a writable location.
 2. Double-click **CT QA Manager.exe**. The app opens in its own window.
-3. Choose **Folders → Open folder** for local PDFs, or save scanner locations under **Settings**. Network shares require access to the network that hosts them.
+3. Choose **Folders → Import from folder** for local PDFs, or save scanner locations under **Settings**. Network shares require access to the network that hosts them.
 
-Use **Saved PDFs** to open the **QA Library** next to the program. Keep the full program folder together when copying to another computer or USB drive. Before upgrading, keep a copy of your QA Library and export a settings and filing backup.
+Use **Open saved PDFs** to open the **QA Library** next to the program. Keep the full program folder together when copying to another computer or USB drive. Before upgrading, keep a copy of your QA Library and export a settings and filing backup.
 
 ## Update an existing Windows copy
 
@@ -30,12 +30,12 @@ Click **Save** in Windows Settings to write **Settings.json** beside the executa
 
 | Workspace | What you can do |
 | --- | --- |
-| **Today** | Check Daily QA receipt, pending reviews, printed exceptions, and monthly deadlines. |
-| **Reports** | Search imported reports, open the source PDF, and check receipt on the calendar. |
-| **Review** | Open failed imports and their original PDFs, review flagged readings, file reports, and undo a filing. |
+| **Today** | See one row per scanner with Daily receipt, the printed result, and Monthly progress. Open the report or Review queue directly. |
+| **Reports** | Search the library or switch to Calendar. Aborted tests and out-of-limit readings are highlighted on the report date. |
+| **Review** | See QA exceptions first, acknowledge a filed report, change its filing, or open an import issue. |
 | **Monthly and Trends** | View the monthly checklist and chart supported readings against the printed limits. |
 | **Folders and Exports** | Browse the organized library and export PDFs with a CSV and HTML summary. |
-| **Settings** | Configure scanner folders and the QA schedule, or back up settings and filing decisions. |
+| **Settings** | Test scanner folder connections, see the last successful check, set the QA schedule, and back up settings and filing decisions. |
 
 ## How reports are handled
 

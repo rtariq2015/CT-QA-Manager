@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ChevronRight, Folder, FolderOpen, FolderInput, Download } from "lucide-react";
+import { ChevronRight, Folder, FolderOpen, FolderInput, Download, Library } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useConnection } from "@/components/qa/LiveLog";
@@ -10,6 +10,7 @@ import { log } from "@/lib/qa-logger";
 import { picker, useFolderReader } from "@/components/qa/useFolderReader";
 import { FolderExplorer } from "@/components/qa/FolderExplorer";
 import { buildTree, buildZip, download, folderParts, savedPaths, type TreeNode } from "@/lib/qa-library";
+import { desktop } from "@/lib/qa-desktop";
 
 export const Route = createFileRoute("/folders")({
   head: () => ({
@@ -27,6 +28,7 @@ export const Route = createFileRoute("/folders")({
 
 function Folders() {
   const { reports } = useQa();
+  const bridge = desktop();
   const [view, setView] = useState<"folders" | "tree">("folders");
   const [source, setSource] = useState<"all" | "local">("all");
   const shown = useMemo(() => source === "local" ? reports.filter((r) => r.source === "uploaded") : reports, [reports, source]);
@@ -81,12 +83,17 @@ function Folders() {
   return (
     <div className="mx-auto max-w-5xl">
       <PageHeader eyebrow="Folders" title="Report library">
-        <Button size="lg" onClick={openFolder} disabled={!!busy}><FolderOpen />Open folder</Button>
+        <div className="flex flex-wrap gap-2">
+          {bridge && <Button variant="outline" onClick={() => void bridge.openLibrary().then(({ ok, error }) => {
+            if (!ok) toast.error(error ?? "The saved PDFs folder could not be opened");
+          }, () => toast.error("The saved PDFs folder could not be opened"))}><Library />Open saved PDFs</Button>}
+          <Button onClick={openFolder} disabled={!!busy}><FolderOpen />Import from folder</Button>
+        </div>
       </PageHeader>
       {inputEl}
 
       <div className="mb-5 grid gap-3 rounded-lg border bg-card p-4 text-sm sm:grid-cols-[1fr_auto] sm:items-center">
-        <p className="text-muted-foreground">Pick the folder that holds your QA PDFs (sub-folders included). Each report is read on this computer and sorted by <b className="text-foreground">scanner → year → month → Daily / Monthly / Other</b>. Nothing is uploaded.</p>
+        <p className="text-muted-foreground">Browse saved reports by scanner, year, month, and report type.</p>
         <Button variant="outline" onClick={saveOrganized} disabled={!!busy || reading || !localCount}>{picker() ? <FolderInput /> : <Download />}{reading ? "Wait, still reading PDFs…" : "Save organized copy"}</Button>
         {busy && <p className="font-mono text-xs text-muted-foreground sm:col-span-2">{busy}</p>}
       </div>
@@ -97,11 +104,11 @@ function Folders() {
           <Button variant={view === "tree" ? "secondary" : "ghost"} size="sm" onClick={() => setView("tree")}>List view</Button>
         </div>
         <Button variant={source === "all" ? "default" : "outline"} size="sm" onClick={() => setSource("all")}>All reports</Button>
-        <Button variant={source === "local" ? "default" : "outline"} size="sm" onClick={() => setSource("local")}>Opened from folder ({reports.filter((r) => r.source === "uploaded").length})</Button>
+        {reports.some((report) => report.source !== "uploaded") && <Button variant={source === "local" ? "default" : "outline"} size="sm" onClick={() => setSource("local")}>Imported PDFs</Button>}
       </div>
       {view === "folders" ? <FolderExplorer reports={shown} /> : (
       <div className="rounded-lg border bg-card p-2">
-        {tree.children.size === 0 ? <p className="p-6 text-center text-muted-foreground">No reports yet — click Open folder.</p>
+        {tree.children.size === 0 ? <p className="p-6 text-center text-muted-foreground">Import a folder of QA PDFs to start the library.</p>
           : [...tree.children.values()].map((n) => <Node key={n.name} node={n} depth={0} />)}
       </div>)}
     </div>

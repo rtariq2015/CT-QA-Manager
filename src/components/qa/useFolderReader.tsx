@@ -5,7 +5,7 @@ import { normalizeConfig, parseSettingsJson, SETTINGS_KEY, kindOf } from "@/lib/
 import { toast } from "sonner";
 import { useQa } from "@/lib/qa-store";
 import { startScan } from "@/lib/qa-scan-log";
-import { log, markFolderOpened, setConnection } from "@/lib/qa-logger";
+import { log, markFolderOpened, recordFolderCheck, setConnection } from "@/lib/qa-logger";
 
 type SourcePdf = File & { sourceKey?: string };
 
@@ -95,6 +95,7 @@ export function useFolderReader(onDone?: () => void, autoConnect = false) {
         const connectionStart = performance.now();
         const kind = kindOf(s);
         const res = await d.readFolder({ ...s, kind }, true);
+        recordFolderCheck(s, res.ok);
         const sourceReadMs = Math.round(performance.now() - connectionStart);
         if (!res.ok) {
           const issue = res.diagnostic ?? { code: "folder-unavailable" };

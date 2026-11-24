@@ -5,6 +5,7 @@ import { ExternalLink, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { METRICS, isOutOfLimit, scannerById, type Report } from "@/lib/qa-data";
 import { Pill } from "./ui";
+import { QA_ALERTS, reportAlert } from "@/lib/qa-report-status";
 
 const format = (value: number, unit: string) => unit === "1/HUcm" ? value.toExponential(2) : String(value);
 
@@ -15,31 +16,33 @@ export function ReportPreview({ report, highlightPage, initialView = "readings" 
   const tubes = [...new Set(report.measurements.flatMap(m => m.tube ? [m.tube] : []))];
   const pages = Array.from({ length: report.pages }, (_, i) => i + 1);
   const status = report.printedStatus ?? "Not available";
+  const alert = reportAlert(report);
+  const pdfUrl = report.originalUrl && highlightPage && highlightPage <= report.pages ? `${report.originalUrl.split("#")[0]}#page=${highlightPage}` : report.originalUrl;
   return (
-    <div className="min-w-0 space-y-4">
-      <header className="space-y-3 border-b pb-4">
+    <div className="min-w-0 space-y-3">
+      <header className="space-y-2 border-b pb-3">
+        <h2 className="break-words text-lg font-semibold">{scanner.model}</h2>
+        <p className="font-mono text-xs text-muted-foreground">{report.date} · {report.time}</p>
         <div className="flex flex-wrap items-center gap-2">
-          <Pill tone="muted">Local PDF</Pill>
-          <Pill tone={status === "NOT OK" ? "bad" : status === "Aborted" ? "warn" : status === "OK" ? "ok" : "muted"}>Printed result: {status}</Pill>
+          <Pill tone={status === "NOT OK" ? "bad" : status === "Aborted" ? "warn" : status === "OK" ? "ok" : "muted"}>{status === "Aborted" ? "Aborted" : status === "Not available" ? "Printed result unavailable" : `Printed ${status}`}</Pill>
+          {alert === "out-of-limit" && <Pill tone={QA_ALERTS[alert].tone}>{QA_ALERTS[alert].label}</Pill>}
           <Pill tone="muted">{filingLabel(report)}</Pill>
         </div>
-        <h2 className="break-words text-lg font-semibold">{scanner.model}</h2>
-        <p className="break-all font-mono text-sm font-medium">{tidyFileName(report)}</p>
-        <p className="break-all font-mono text-xs text-muted-foreground">Original file: {report.fileName} · {report.date} {report.time}</p>
         {report.originalUrl
           ? <div className="flex flex-wrap gap-2">
               <Button size="sm" variant={showPdf ? "default" : "outline"} aria-pressed={showPdf} onClick={() => setShowPdf(v => !v)}><FileText />{showPdf ? "Show readings" : "View PDF"}</Button>
-              <Button asChild variant="outline" size="sm"><a href={report.originalUrl} download={tidyFileName(report)}>Save as {tidyFileName(report)}</a></Button>
-              <Button asChild variant="outline" size="sm"><a href={report.originalUrl} target="_blank" rel="noreferrer">Open in new tab <ExternalLink /></a></Button>
+              <Button asChild variant="outline" size="sm"><a href={report.originalUrl} download={tidyFileName(report)}>Save PDF</a></Button>
+              <Button asChild variant="ghost" size="sm"><a href={pdfUrl} target="_blank" rel="noreferrer">Open separately <ExternalLink /></a></Button>
             </div>
-          : <p className="text-xs text-muted-foreground">The PDF is available for reports you open with "Open local PDFs" or Folders.</p>}
-        {tubes.length > 1 && <div className="flex flex-wrap gap-2" aria-label="Tube filter">{["all", ...tubes].map(t => <Button key={t} size="sm" variant={tube === t ? "default" : "outline"} aria-pressed={tube === t} onClick={() => setTube(t)}>{t === "all" ? "Both tubes" : `Tube ${t}`}</Button>)}</div>}
-        {Boolean(report.extractionNotes?.length) && <details className="text-xs text-muted-foreground">
-          <summary className="cursor-pointer">Extraction notes</summary>
+          : <p className="text-xs text-muted-foreground">Original PDF unavailable. Reopen it from its source folder.</p>}
+        {!showPdf && tubes.length > 1 && <div className="flex flex-wrap gap-2" aria-label="Tube filter">{["all", ...tubes].map(t => <Button key={t} size="sm" variant={tube === t ? "default" : "outline"} aria-pressed={tube === t} onClick={() => setTube(t)}>{t === "all" ? "Both tubes" : `Tube ${t}`}</Button>)}</div>}
+        <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer">File details</summary>
+          <p className="mt-1 break-all font-mono">{report.fileName}</p>
           {report.extractionNotes?.map((note) => <p key={note} className="mt-1">{note}</p>)}
-        </details>}
+        </details>
       </header>
-      {showPdf && report.originalUrl && <iframe title={`PDF ${report.fileName}`} src={report.originalUrl} className="h-[75vh] w-full rounded-md border bg-card" />}
+      {showPdf && pdfUrl && <iframe title={`PDF ${report.fileName}`} src={pdfUrl} className="h-[75vh] w-full rounded-md border bg-card" />}
       {!showPdf && pages.map(page => {
         const ms = report.measurements.filter(m => m.page === page && (tube === "all" || !m.tube || m.tube === tube));
         const sections = report.printedSections?.filter(s => s.page === page) ?? [];

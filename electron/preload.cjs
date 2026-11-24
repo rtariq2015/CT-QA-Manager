@@ -14,4 +14,5 @@ contextBridge.exposeInMainWorld("ctqaDesktop", {
   saveCopy: (rel, data, previous, metadata) => ipcRenderer.invoke("ctqa:saveCopy", rel, data, previous, metadata),
   openLibrary: () => ipcRenderer.invoke("ctqa:openLibrary"),
   readFolder: (source, incremental) => ipcRenderer.invoke("ctqa:readFolder", source, incremental),
+  testFolder: (source) => ipcRenderer.invoke("ctqa:readFolder", source, false, true),
 });

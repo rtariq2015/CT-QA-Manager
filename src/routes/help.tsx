@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { METRICS } from "@/lib/qa-data";
 import { PageHeader } from "@/components/qa/ui";
 
@@ -29,7 +29,16 @@ function Help() {
   const monthly = METRICS.filter((m) => m.frequency === "Monthly");
   return (
     <div className="mx-auto max-w-3xl">
-      <PageHeader eyebrow="Help" title="Siemens QA guide" />
+      <PageHeader eyebrow="CT QA Manager" title="Help & guide" />
+      <section className="mb-6 rounded-lg border bg-card p-5">
+        <h2 className="mb-2 text-lg font-semibold">Common tasks</h2>
+        <ul className="space-y-2 text-sm">
+          <li><Link to="/folders" className="text-primary underline">Import QA PDFs</Link> from a local scanner folder.</li>
+          <li><Link to="/review" search={{ lane: "exceptions" }} className="text-primary underline">Review QA exceptions</Link> and open the original PDF.</li>
+          <li><Link to="/settings" className="text-primary underline">Test a scanner connection</Link> or check its last successful scan in Settings.</li>
+          <li><Link to="/exports" className="text-primary underline">Export reports</Link> for a scanner, month, or report type.</li>
+        </ul>
+      </section>
       {[["Daily tests", daily], ["Monthly / constancy tests", monthly]].map(([title, list]) => (
         <section key={title as string} className="mb-6 rounded-lg border bg-card p-5">
           <h2 className="mb-3 text-lg font-semibold">{title as string}</h2>

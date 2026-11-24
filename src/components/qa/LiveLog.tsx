@@ -8,7 +8,7 @@ import { folderRows, unmatchedFolders, normalizeConfig, SETTINGS_KEY, DEFAULT, t
 import { useQa } from "@/lib/qa-store";
 
 const EMPTY: LogEntry[] = [];
-const IDLE: Connection = { state: "idle", kind: "local", done: 0, total: 0, failed: 0, opened: [] };
+const IDLE: Connection = { state: "idle", kind: "local", done: 0, total: 0, failed: 0, opened: [], checks: {} };
 export const useLog = () => useSyncExternalStore(subscribe, getLog, () => EMPTY);
 export const useConnection = () => useSyncExternalStore(subscribe, getConnection, () => IDLE);
 

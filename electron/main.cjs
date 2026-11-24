@@ -199,7 +199,7 @@ async function walkPdfs(dir, out = []) {
   }
   return out;
 }
-handleAppMessage("ctqa:readFolder", async (_e, source, incremental = false) => {
+handleAppMessage("ctqa:readFolder", async (_e, source, incremental = false, checkOnly = false) => {
   const p = String(source.path || "");
   let login = null;
   let loginResult = null;
@@ -211,6 +211,10 @@ handleAppMessage("ctqa:readFolder", async (_e, source, incremental = false) => {
     }
   }
   try {
+    if (checkOnly === true) {
+      await fs.promises.readdir(p);
+      return { ok: true, files: [] };
+    }
     const paths = await walkPdfs(p);
     const files = [];
     const unreadableFiles = [];

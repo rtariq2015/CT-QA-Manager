@@ -1,14 +1,18 @@
 import { Button } from "@/components/ui/button";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLocation } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { METRICS, SCANNERS, driftRatio, isOutOfLimit, type MetricId, type Report, type ScannerId } from "@/lib/qa-data";
 import { useQa } from "@/lib/qa-store";
-import { PageHeader, Pill, ScannerDot } from "@/components/qa/ui";
+import { PageHeader, Pill } from "@/components/qa/ui";
+import { scannerFilter } from "@/lib/qa-route-filters";
 import { ReportPreview } from "@/components/qa/ReportPreview";
 import { cn } from "@/lib/utils";
 
+type TrendSearch = { scanner?: ScannerId | undefined; metric?: MetricId | undefined };
+
 export const Route = createFileRoute("/trends")({
+  validateSearch: (search): TrendSearch => ({ scanner: scannerFilter(search["scanner"]), metric: METRICS.find(({ id }) => id === search["metric"])?.id }),
   head: () => ({
     meta: [
       { title: "Trends — CT QA Manager Companion" },
@@ -26,8 +30,11 @@ const RANGES = [{ l: "3 months", d: 90 }, { l: "1 year", d: 365 }, { l: "2 years
 
 function Trends() {
   const { reports } = useQa();
-  const [scanner, setScanner] = useState<ScannerId>("flash");
-  const [metric, setMetric] = useState<MetricId>("noise");
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const scanner = search.scanner ?? "flash";
+  const metric = search.metric ?? "noise";
+  const linkedContext = useLocation({ select: ({ state }) => state.qaTrendContext });
   const [range, setRange] = useState(365);
   const [picked, setPicked] = useState<{ r: Report; page: number } | null>(null);
 
@@ -36,8 +43,14 @@ function Trends() {
     for (const r of reports) if (r.scanner === scanner) for (const m of r.measurements) if (m.metric === metric) set.add(m.context);
     return [...set];
   }, [reports, scanner, metric]);
-  const [ctxPick, setCtx] = useState("");
-  const context = contexts.includes(ctxPick) ? ctxPick : (contexts.find((c) => c.startsWith("120")) ?? contexts[0] ?? "");
+  const [ctxPick, setCtx] = useState<string>();
+  const preferredContext = ctxPick ?? linkedContext;
+  const context = preferredContext && contexts.includes(preferredContext) ? preferredContext : (contexts.find((c) => c.startsWith("120")) ?? contexts[0] ?? "");
+  const choose = (next: TrendSearch) => {
+    setCtx(undefined);
+    setPicked(null);
+    void navigate({ search: (previous) => ({ ...previous, ...next }), state: {}, replace: true });
+  };
 
   const points = useMemo(() => {
     const filed = reports.filter((r) => r.scanner === scanner && r.type !== "Other");
@@ -59,31 +72,22 @@ function Trends() {
     <div className="mx-auto max-w-7xl">
       <PageHeader eyebrow={`Trends · ${info.frequency}`} title={info.label}>
         <div className="flex gap-1">{RANGES.map((x) => (
-          <Button variant="outline" key={x.d} onClick={() => setRange(x.d)} className={cn("rounded-md border px-3 py-1.5 text-sm", range === x.d ? "border-primary bg-accent" : "bg-card hover:bg-muted")}>{x.l}</Button>
+          <Button variant="outline" key={x.d} aria-pressed={range === x.d} onClick={() => { setRange(x.d); setPicked(null); }} className={cn("rounded-md border px-3 py-1.5 text-sm", range === x.d ? "border-primary bg-accent" : "bg-card hover:bg-muted")}>{x.l}</Button>
         ))}</div>
       </PageHeader>
 
-      <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
-        <aside className="space-y-4">
-          <div className="flex flex-wrap gap-1 lg:flex-col">
-            {SCANNERS.map((s) => (
-              <Button variant="outline" key={s.id} onClick={() => setScanner(s.id)} className={cn("flex items-center gap-2 rounded-md border px-3 py-2 text-left", scanner === s.id ? "border-primary bg-accent font-medium" : "bg-card hover:bg-muted")}>
-                <ScannerDot id={s.id} />{s.name} · {s.model.replace("SOMATOM ", "")}
-              </Button>
-            ))}
-          </div>
-          <nav className="rounded-lg border bg-card p-1" aria-label="Measurements">
-            {METRICS.map((m) => (
-              <Button variant="outline" key={m.id} onClick={() => setMetric(m.id)} className={cn("flex w-full items-center justify-between rounded px-3 py-2 text-left", metric === m.id ? "bg-accent font-medium" : "hover:bg-muted")}>
-                {m.label}{m.isNew && <span className="rounded bg-primary/15 px-1.5 text-xs text-primary">new</span>}
-              </Button>
-            ))}
-          </nav>
-        </aside>
-
         <section className="min-w-0 space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <select aria-label="Measurement context" value={context} onChange={e => setCtx(e.target.value)} className="h-11 w-full min-w-0 rounded-md border bg-card px-3 text-sm">
+          <div className="grid gap-2 sm:grid-cols-[minmax(6rem,1fr)_minmax(8rem,1.5fr)_minmax(10rem,2fr)]">
+            <select aria-label="Scanner" value={scanner} onChange={(e) => choose({ scanner: scannerFilter(e.target.value) })} className="h-10 min-w-0 rounded-md border bg-card px-2 text-sm">
+              {SCANNERS.map(({ id, name }) => <option key={id} value={id}>{name}</option>)}
+            </select>
+            <select aria-label="Measurement" value={metric} onChange={(e) => choose({ metric: METRICS.find(({ id }) => id === e.target.value)?.id })} className="h-10 min-w-0 rounded-md border bg-card px-2 text-sm">
+              {(["Daily", "Monthly"] as const).map((frequency) => <optgroup key={frequency} label={frequency}>
+                {METRICS.filter((item) => item.frequency === frequency).map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
+              </optgroup>)}
+            </select>
+            <select aria-label="Measurement context" value={context} disabled={!contexts.length} onChange={(e) => { setCtx(e.target.value); setPicked(null); }} className="h-10 min-w-0 rounded-md border bg-card px-2 text-sm">
+              {contexts.length === 0 && <option value="">No measurement contexts</option>}
               {contexts.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
@@ -121,7 +125,6 @@ function Trends() {
             </div>
           )}
         </section>
-      </div>
     </div>
   );
 }

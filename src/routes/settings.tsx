@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PageHeader, Pill } from "@/components/qa/ui";
 import { LiveLogView, useConnection } from "@/components/qa/LiveLog";
-import { exportDiagnostic, log } from "@/lib/qa-logger";
+import { exportDiagnostic, folderCheck, log, recordFolderCheck } from "@/lib/qa-logger";
 import { buildUsbPackage } from "@/lib/qa-portable";
 import { desktop } from "@/lib/qa-desktop";
 
@@ -48,6 +48,7 @@ function Settings() {
   const [pw, setPw] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState<Record<string, boolean>>({});
   const [isDesktop, setIsDesktop] = useState(false);
+  const [testing, setTesting] = useState<number>();
   useEffect(() => { const d = desktop(); setIsDesktop(!!d); if (d) void Promise.all(cfg.sources.map(async (s) => [s.name, await d.hasLogin(s.name)] as const)).then((r) => setSaved(Object.fromEntries(r))); }, [cfg.sources]);
   useEffect(() => { try { const s = localStorage.getItem(KEY); if (s) { const c = normalizeConfig(JSON.parse(s) as unknown); setCfg(c); setSavedNames(c.sources.map((x) => x.name)); } else setSavedNames(DEFAULT.sources.map((x) => x.name)); } catch { /* ignore */ } }, []);
   useEffect(() => {
@@ -64,6 +65,24 @@ function Settings() {
   const set = (c: Partial<Config>) => setCfg((o) => ({ ...o, ...c }));
   const setSrc = (i: number, s: Partial<Source>) => set({ sources: cfg.sources.map((x, j) => j === i ? { ...x, ...s } : x) });
   const setKind = (i: number, kind: FolderKind) => setSrc(i, { kind });
+  const testConnection = async (source: Source, index: number) => {
+    const bridge = desktop();
+    if (!bridge || testing !== undefined) return;
+    setTesting(index);
+    try {
+      const result = await bridge.testFolder({ ...source, path: source.path.trim(), kind: kindOf(source) });
+      recordFolderCheck(source, result.ok);
+      if (result.ok) toast.success(`${source.name}: folder is reachable`);
+      else {
+        const message = result.error ?? `${source.name}: folder could not be reached`;
+        log("warning", "folder", message);
+        toast.error(message);
+      }
+    } catch {
+      recordFolderCheck(source, false);
+      toast.error(`${source.name}: test could not be completed`);
+    } finally { setTesting(undefined); }
+  };
   const persist = async (next: Config) => {
     const d = desktop();
     if (d) await d.saveSettings(buildSettingsJson(next));
@@ -153,16 +172,14 @@ function Settings() {
         </TabsList>
         <TabsContent value="network">
           <section className="mb-6 rounded-lg border bg-card p-4">
-            <h2 className="mb-1 font-medium">Scanner folders (Network or Desktop / Local)</h2>
-            <p className="mb-4 text-sm text-muted-foreground">Where each scanner sends its QA PDFs — a network share (e.g. <code>\\192.168.1.20\QA</code>) or a regular folder on this computer (e.g. <code>C:\Users\you\Desktop\QA Reports</code> or <code>E:\EXCITE-ED</code>). Switch each folder between the two types below. The Windows program uses these to pull reports automatically; a web browser cannot reach network folders by itself — use <b>Folders → Open folder</b> here.</p>
-            <p className="mb-4 rounded-md bg-muted p-3 text-sm">
-              <b className="font-medium">{folderRows(cfg.sources, conn.opened).filter((r) => r.opened).length} of {cfg.sources.length} folders connected</b> in this window.
-              A web page cannot reach a network share by itself — open the folder on <Link to="/folders" className="underline">Folders → Open folder</Link> to load its reports.
-            </p>
-            <p className="mb-4 rounded-md bg-muted p-3 text-sm">{isDesktop ? "Type the password and press Save. It is locked with Windows encryption on this computer and the folders connect automatically each time the program opens." : "Passwords can only be saved in the downloaded desktop program. Here, use Open folder at the top."}</p>
+            <h2 className="mb-1 font-medium">Scanner connections</h2>
+            {isDesktop ? <p className="mb-4 text-sm text-muted-foreground">Enter the folder that receives each scanner’s QA PDFs. For a network share, save the login before testing the connection.</p>
+              : <p className="mb-4 text-sm text-muted-foreground">Use <Link to="/folders" className="underline">Folders → Import from folder</Link> to load reports in the web app.</p>}
             <div className="space-y-5">
               {folderRows(cfg.sources, conn.opened).map(({ source: s, opened }, i) => {
                 const kind = kindOf(s);
+                const check = folderCheck(conn, s);
+                const configured = Boolean(s.path.trim() && s.path.trim() !== "\\\\");
                 return (
                   <div key={i} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[180px_1fr_auto]">
                     <input className={inp} value={s.name} onChange={(e) => setSrc(i, { name: e.target.value })} aria-label="Scanner name" />
@@ -179,9 +196,13 @@ function Settings() {
                         ))}
                       </div>
                       <span className="text-xs text-muted-foreground">{KIND_HINT[kind]}</span>
-                      {opened
-                        ? <Pill tone="ok">Connected · {opened.count} report{opened.count === 1 ? "" : "s"}</Pill>
-                        : <Pill tone="muted">Not connected</Pill>}
+                      {isDesktop && <Button type="button" size="sm" variant="outline" disabled={!configured || testing !== undefined || (kind === "network" && Boolean(pw[s.name]))}
+                        onClick={() => void testConnection(s, i)}>{testing === i ? "Testing…" : "Test connection"}</Button>}
+                      {check?.ok === false ? <Pill tone="bad">Last check failed</Pill>
+                        : check?.ok ? <Pill tone="ok">Folder reachable</Pill>
+                        : opened ? <Pill tone="ok">Folder opened</Pill>
+                        : <Pill tone="muted">{configured ? "Awaiting check" : "Folder not set"}</Pill>}
+                      {check?.successfulAt && <time className="text-xs text-muted-foreground" dateTime={check.successfulAt}>Last successful check {new Date(check.successfulAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</time>}
                     </div>
                     {kind === "network" && (
                       <div className="grid gap-2 sm:col-span-3 sm:grid-cols-2">
@@ -250,7 +271,7 @@ function Settings() {
                 <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
                   <li>Copy the entire extracted CT QA Manager program folder onto the USB stick.</li>
                   <li>On the Windows PC, open the copied folder and double-click <b className="text-foreground">CT QA Manager.exe</b>.</li>
-                  <li>Go to Folders → Open folder and select the folder containing your scanner PDFs.</li>
+                  <li>Go to Folders → Import from folder and select the folder containing your scanner PDFs.</li>
                 </ol>
               </>
             ) : (
@@ -260,7 +281,7 @@ function Settings() {
                   <li>Download the ZIP and extract its contents onto the USB stick.</li>
                   <li>Put scanner PDFs in the <b className="text-foreground">Reports</b> folder.</li>
                   <li>On a Windows PC with access to this site, double-click <b className="text-foreground">Start CT QA.bat</b>.</li>
-                  <li>Go to Folders → Open folder and select the USB's Reports folder.</li>
+                  <li>Go to Folders → Import from folder and select the USB's Reports folder.</li>
                 </ol>
                 <Button onClick={async () => { const zip = await buildUsbPackage(cfg, window.location.origin); const url = URL.createObjectURL(new Blob([zip as BlobPart], { type: "application/zip" })); const a = document.createElement("a"); a.href = url; a.download = "CTQA-USB.zip"; a.click(); URL.revokeObjectURL(url); log("success", "settings", "USB package downloaded"); }}>Download USB folders and shortcut</Button>
               </>

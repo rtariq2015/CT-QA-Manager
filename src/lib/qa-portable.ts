@@ -11,7 +11,7 @@ export function usbFiles(cfg: Config, appUrl: string): Record<string, string> {
 1. Keep this whole CTQA folder together. You can move it to any USB stick, Desktop or shared drive.
 2. Put scanner QA PDFs into the Reports folder (one sub-folder per scanner).
 3. Double-click "Start CT QA.bat". No install and no admin rights are needed.
-4. In the app: Folders -> Open folder -> pick this USB's Reports folder.
+4. In the app: Folders -> Import from folder -> pick this USB's Reports folder.
 
 PDFs are read only on the PC you are using and are never uploaded.
 If something looks wrong: click Log at the top, then Download log, and send the file.

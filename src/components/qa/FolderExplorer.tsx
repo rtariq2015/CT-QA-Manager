@@ -4,6 +4,7 @@ import type { Report } from "@/lib/qa-data";
 import { folderParts, tidyFileName } from "@/lib/qa-library";
 import { Pill } from "@/components/qa/ui";
 import { cn } from "@/lib/utils";
+import { QA_ALERTS, reportAlert } from "@/lib/qa-report-status";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -35,7 +36,7 @@ export function FolderExplorer({ reports }: { reports: Report[] }) {
           </span>
         ))}
       </nav>
-      {inHere.length === 0 ? <p className="p-8 text-center text-muted-foreground">No reports yet — click Open folder.</p> : depth < 4 ? (
+      {inHere.length === 0 ? <p className="p-8 text-center text-muted-foreground">Import a folder of QA PDFs to start the library.</p> : depth < 4 ? (
         <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3 md:grid-cols-4">
           {folders.map(([k, e]) => (
             <button key={k} onDoubleClick={() => setPath([...path, k])} onClick={() => setPath([...path, k])}
@@ -49,8 +50,10 @@ export function FolderExplorer({ reports }: { reports: Report[] }) {
         </div>
       ) : (
         <ul className="divide-y">
-          {files.map((r) => (
-            <li key={r.id}>
+          {files.map((r) => {
+            const alert = reportAlert(r);
+            const status = alert && QA_ALERTS[alert];
+            return <li key={r.id}>
               <button disabled={!r.originalUrl} onClick={() => r.originalUrl && window.open(r.originalUrl, "_blank")}
                 className={cn("flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm", r.originalUrl ? "hover:bg-muted" : "cursor-default")}>
                 <FileText className="size-5 shrink-0 text-destructive" />
@@ -58,10 +61,10 @@ export function FolderExplorer({ reports }: { reports: Report[] }) {
                   <span className="block truncate font-medium">{tidyFileName(r)}</span>
                   <span className="block truncate text-xs text-muted-foreground">{r.originalUrl ? `Original: ${r.fileName} · click to open` : "Original PDF unavailable"}</span>
                 </span>
-                <Pill tone={r.printedStatus === "NOT OK" ? "bad" : r.printedStatus === "Aborted" ? "warn" : r.printedStatus === "OK" ? "ok" : "muted"}>{r.printedStatus ?? "Not available"}</Pill>
+                <Pill tone={status?.tone ?? (r.printedStatus === "OK" ? "ok" : "muted")}>{status?.label ?? (r.printedStatus === "OK" ? "Printed OK" : "Result unavailable")}</Pill>
               </button>
-            </li>
-          ))}
+            </li>;
+          })}
         </ul>
       )}
     </div>

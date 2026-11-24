@@ -1,234 +1,147 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, CircleDashed, CalendarDays, FileCheck2, ClipboardList, type LucideIcon } from "lucide-react";
-import { useMemo, useState } from "react";
-import { MONTHLY_CHECKLIST, SCANNERS, addDays, isOutOfLimit, isScheduledQaDay, monthlyCoverage, monthlyWaiting, trendWarnings } from "@/lib/qa-data";
+import { ArrowRight, CalendarDays, ChevronRight } from "lucide-react";
+import { useMemo } from "react";
+import { MONTHLY_CHECKLIST, SCANNERS, isScheduledQaDay, monthlyCoverage, trendWarnings } from "@/lib/qa-data";
+import { QA_ALERTS, strongestReportAlert } from "@/lib/qa-report-status";
+import { reportReviewLane } from "@/lib/qa-triage";
 import { useQa } from "@/lib/qa-store";
-import ctRoom from "@/assets/ct-scanner-room.jpg";
+import { Button } from "@/components/ui/button";
 import { Pill, ScannerDot, fmtDate, scanColor } from "@/components/qa/ui";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Today — CT QA Manager Companion" },
-      { name: "description", content: "Daily QA receipt, monthly progress and pending reviews for every CT scanner at a glance." },
-      { property: "og:title", content: "Today — CT QA Manager Companion" },
-      { property: "og:description", content: "Daily QA receipt, monthly progress and pending reviews for every CT scanner." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
+      { title: "Today — CT QA Manager" },
+      { name: "description", content: "Today's Daily QA, monthly checklist progress and pending reviews for each scanner." },
+      { property: "og:title", content: "Today — CT QA Manager" },
+      { property: "og:description", content: "Daily QA and monthly checklist progress for each CT scanner." },
     ],
   }),
   component: Today,
 });
 
+const scannerColumns = "grid grid-cols-2 items-center gap-3 md:grid-cols-[minmax(7rem,1fr)_minmax(6rem,.9fr)_minmax(10rem,1.5fr)_minmax(6.5rem,.9fr)]";
+
 function Today() {
   const { reports, pending, failedImports, today, schedule } = useQa();
   const month = today.slice(0, 7);
   const dailyExpected = isScheduledQaDay(today, schedule.days);
-  const cards = useMemo(() => SCANNERS.map((s) => {
-    const mine = reports.filter((r) => r.scanner === s.id);
-    const dailyReports = mine.filter((r) => r.date === today && r.type === "Daily");
-    const daily = dailyReports[0];
-    const dailyNotOk = dailyReports.some((r) => r.printedStatus === "NOT OK");
-    const dailyNeedsReview = dailyReports.some((r) => r.needsReview);
-    const flagged = dailyReports.flatMap((r) => r.measurements.filter(isOutOfLimit));
-    const monthlies = mine.filter((r) => r.date.startsWith(month) && r.type === "Monthly");
-    const found = new Set(monthlies.flatMap((r) => r.measurements.map((m) => m.metric)));
-    const done = MONTHLY_CHECKLIST.filter((c) => found.has(c.metric)).length;
-    const last7 = Array.from({ length: 7 }, (_, i) => {
-      const iso = addDays(today, i - 6);
-      return { iso, ok: mine.some((r) => r.date === iso && r.type === "Daily"), expected: isScheduledQaDay(iso, schedule.days) };
-    });
-    return { s, daily, dailyNotOk, dailyNeedsReview, flagged, done, pending: pending.filter((p) => p.scanner === s.id).length, last7 };
-  }), [reports, pending, month, today, schedule.days]);
-
-  const reviewCount = pending.length + failedImports.length;
-  const monthly = useMemo(() => SCANNERS.map((s) => ({
-    s, ...monthlyCoverage(reports, s.id, month), waiting: monthlyWaiting(reports, s.id, month),
-    review: pending.filter((r) => r.scanner === s.id && r.date.startsWith(month) && r.type === "Monthly").length,
-  })), [reports, pending, month]);
-
-  const received = cards.filter((c) => c.daily).length;
-  const [open, setOpen] = useState<string | null>(null);
-  const [showAttn, setShowAttn] = useState(false);
-  const [tab, setTab] = useState<"daily" | "monthly">("daily");
-  const dueIn = schedule.dueDay - Number(today.slice(8, 10));
-  const notOk = reports.filter((r) => r.printedStatus === "NOT OK" && r.date.startsWith(month));
-  const attention = [
-    ...cards.filter((c) => dailyExpected && !c.daily).map((c) => ({ key: `miss-${c.s.id}`, tone: "warn" as const, text: `${c.s.name}: today's Daily QA not received`, to: "/reports" as const })),
-    ...cards.filter((c) => c.dailyNotOk).map((c) => ({ key: `bad-${c.s.id}`, tone: "bad" as const, text: `${c.s.name}: today's report prints NOT OK`, to: "/reports" as const })),
-    ...monthly.filter((m) => m.done < MONTHLY_CHECKLIST.length && dueIn <= 3).map((m) => ({
-      key: `due-${m.s.id}`,
-      tone: (dueIn < 0 ? "bad" : "warn") as "bad" | "warn",
-      text: dueIn < 0
-        ? `${m.s.name}: ${MONTHLY_CHECKLIST.length - m.done} monthly test${MONTHLY_CHECKLIST.length - m.done === 1 ? "" : "s"} still missing, ${-dueIn} day${-dueIn === 1 ? "" : "s"} past the due day`
-        : `${m.s.name}: monthly tests due in ${dueIn} day${dueIn === 1 ? "" : "s"}`,
-      to: "/monthly" as const,
-    })),
-    ...reports.filter((r) => r.source === "uploaded" && r.extractionIncomplete && r.needsReview).slice(0, 3).map((r) => ({ key: `ex-${r.id}`, tone: "warn" as const, text: `${r.fileName}: only partly readable — check by eye`, to: "/reports" as const })),
-    ...SCANNERS.flatMap((s) => trendWarnings(reports, s.id).slice(0, 2).map((w) => ({ key: `trend-${s.id}-${w.metric}-${w.context}`, tone: "warn" as const, text: `${s.name}: ${w.label.toLowerCase()} (${w.context}) ${w.direction} 3 reports in a row — still within limits`, to: "/trends" as const }))),
-  ];
+  const scanners = useMemo(() => SCANNERS.map((scanner) => {
+    const mine = reports.filter((report) => report.scanner === scanner.id);
+    const daily = mine.filter((report) => report.type === "Daily" && report.date === today);
+    const monthly = monthlyCoverage(mine, scanner.id, month);
+    return { scanner, daily, issue: strongestReportAlert(daily), monthly };
+  }), [reports, month, today]);
+  const trends = useMemo(() => SCANNERS.flatMap((scanner) => trendWarnings(reports, scanner.id).slice(0, 2)
+    .map((warning) => ({ ...warning, scannerName: scanner.name }))), [reports]);
+  const received = scanners.filter(({ daily }) => daily.length > 0).length;
+  const filing = pending.filter((report) => reportReviewLane(report) === "filing").length;
+  const exceptions = pending.length - filing;
+  const importIssues = failedImports.length;
+  const reviewCount = pending.length + importIssues;
+  const dueIn = schedule.dueDay - Number(today.slice(8));
+  const monthlyIncomplete = scanners.some(({ monthly }) => monthly.done < MONTHLY_CHECKLIST.length);
 
   return (
     <div className="mx-auto max-w-6xl">
-      <section className="relative mb-6 isolate overflow-hidden rounded-2xl bg-[#10263b] text-white shadow-sm">
-        <img src={ctRoom} alt="" width={1774} height={887} className="absolute inset-y-0 right-0 -z-20 h-full w-full object-cover object-right sm:w-3/5" />
-        <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[#10263b] from-30% via-[#10263b]/90 via-55% to-[#10263b]/15" />
-        <div className="flex min-h-44 flex-col justify-center gap-3 p-6 sm:min-h-56 sm:p-8">
-          <p className="flex items-center gap-2 text-sm font-medium text-sky-100"><CalendarDays className="size-4" />{fmtDate(today)}</p>
-          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">QA overview</h1>
-          <p className="text-base text-slate-200">{dailyExpected ? `${received} of ${SCANNERS.length} scanners have sent today’s Daily QA` : "No Daily QA scheduled today"}</p>
-          {reviewCount > 0 && (
-            <Link to="/review" className="mt-1 inline-flex w-fit items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-[#10263b] hover:bg-sky-100">
-              Review {reviewCount} report{reviewCount === 1 ? "" : "s"} <ArrowRight className="size-4" />
-            </Link>
-          )}
+      <header className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="flex items-center gap-2 text-sm text-muted-foreground"><CalendarDays className="size-4" aria-hidden />{fmtDate(today)}</p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight">Today</h1>
         </div>
-      </section>
+        {reviewCount > 0 && <Button asChild><Link to="/review">Open Review <ArrowRight /></Link></Button>}
+      </header>
 
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Summary label="Daily reports today" value={dailyExpected ? `${received}/${SCANNERS.length}` : String(received)} icon={FileCheck2} to="/reports" />
-        <Summary label="Needs review" value={String(reviewCount)} icon={ClipboardList} to="/review" />
-        <Summary label="Printed NOT OK this month" value={String(notOk.length)} tone={notOk.length ? "bad" : undefined} icon={AlertTriangle} to="/reports" />
-        <Summary label="Monthly due" value={dueIn === 0 ? "Today" : dueIn > 0 ? `In ${dueIn} days` : `${-dueIn}d overdue`} icon={CalendarDays} to="/monthly" />
-      </div>
-
-      <section className="mb-6 rounded-lg border bg-card">
-        <button onClick={() => setShowAttn((v) => !v)} aria-expanded={showAttn} className="flex w-full items-center gap-2 p-4 text-left">
-          <h2 className="font-semibold">Needs attention</h2>
-          <span className={attention.length ? "rounded-full bg-destructive/15 px-2 text-sm font-medium text-destructive" : "rounded-full bg-muted px-2 text-sm text-muted-foreground"}>{attention.length}</span>
-          <span className="ml-auto text-sm text-muted-foreground">{showAttn ? "Hide" : "Show"}</span>
-          <ChevronDown className={showAttn ? "size-4 rotate-180 transition-transform" : "size-4 transition-transform"} />
-        </button>
-        {showAttn && <div className="border-t px-4 pb-2">
-        {attention.length === 0 ? <p className="py-3 text-muted-foreground">Nothing needs attention right now.</p> : (
-          <ul className="divide-y">
-            {attention.map((a) => (
-              <li key={a.key}><Link to={a.to} className="flex items-center gap-3 py-2.5 hover:underline">
-                <AlertTriangle className={a.tone === "bad" ? "size-4 shrink-0 text-destructive" : "size-4 shrink-0 text-warn"} />{a.text}
-              </Link></li>
-            ))}
-          </ul>
-        )}
-        </div>}
-      </section>
-
-      <div role="tablist" className="mb-4 inline-flex rounded-lg border bg-muted p-1">
-        {(["daily", "monthly"] as const).map((t) => (
-          <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
-            className={tab === t ? "rounded-md bg-background px-4 py-1.5 text-sm font-medium shadow-sm" : "rounded-md px-4 py-1.5 text-sm text-muted-foreground"}>
-            {t === "daily" ? "Daily" : "Monthly"}
-          </button>
-        ))}
-      </div>
-
-      {tab === "daily" && (
-      <div className="grid gap-4 sm:grid-cols-2">
-        {cards.map(({ s, daily, dailyNotOk, dailyNeedsReview, flagged, done, pending: p, last7 }) => (
-          <article key={s.id} className="relative overflow-hidden rounded-xl border bg-card p-5 shadow-sm">
-            <div className="absolute inset-y-0 left-0 w-1" style={{ background: scanColor[s.id] }} />
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="flex items-center gap-2 text-xl font-semibold"><ScannerDot id={s.id} />{s.name} · {s.location}</h2>
-                <p className="text-muted-foreground">{s.model} · {s.software}</p>
-              </div>
-              {daily ? (dailyNotOk ? <Pill tone="bad"><AlertTriangle className="size-3.5" />Printed NOT OK · {flagged.length} readings</Pill> : dailyNeedsReview ? <Pill tone="warn">Daily received · review needed</Pill> : <Pill tone="ok"><CheckCircle2 className="size-3.5" />Daily received</Pill>)
-                : <Pill tone={dailyExpected ? "warn" : "muted"}><CircleDashed className="size-3.5" />{dailyExpected ? "Daily missing" : "No Daily QA scheduled"}</Pill>}
-            </div>
-
-            <button className="mt-4 text-sm text-primary underline-offset-4 hover:underline" onClick={() => setOpen(open === s.id ? null : s.id)}>{open === s.id ? "Hide details" : "Show details"}</button>
-            {open === s.id && <>
-            <div className="mt-4 grid grid-cols-3 gap-4">
-              <Stat label="Daily at" value={daily ? daily.time : "—"} />
-              <Stat label="Monthly tests" value={`${done}/${MONTHLY_CHECKLIST.length}`} sub={done < MONTHLY_CHECKLIST.length ? `due ${month.slice(5)}/${schedule.dueDay}` : "found"} />
-              <Stat label="To review" value={String(p)} />
-            </div>
-
-            <div className="mt-5">
-              <p className="mb-1.5 text-sm text-muted-foreground">Last 7 days</p>
-              <div className="flex gap-1.5">
-                {last7.map((d) => (
-                  <div key={d.iso} title={`${d.iso}: ${d.ok ? "received" : d.expected ? "missing" : "unscheduled"}`}
-                    className={`h-7 flex-1 rounded-sm ${d.ok ? "bg-ok/70" : d.expected ? "border-2 border-dashed border-warn" : "bg-muted"}`} />
-                ))}
-              </div>
-            </div>
-            </>}
-          </article>
-        ))}
-      </div>
-      )}
-
-      {tab === "monthly" && (
-      <section>
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-semibold">Monthly tests · {new Date(month + "-01T00:00:00Z").toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })}</h2>
-          <Link to="/monthly" className="text-sm text-primary underline-offset-4 hover:underline">Open full checklist</Link>
+      <section className="overflow-hidden rounded-xl border bg-card" aria-labelledby="scanner-status-heading">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-4 sm:px-5">
+          <div>
+            <h2 id="scanner-status-heading" className="text-lg font-semibold">Scanner status</h2>
+            <p className="text-sm text-muted-foreground">{dailyExpected ? `${received} of ${SCANNERS.length} Daily reports received` : "Daily QA is not scheduled today"}</p>
+          </div>
+          <Link to="/monthly" search={{ month }} className="text-sm text-primary hover:underline">
+            {monthlyIncomplete ? (dueIn < 0 ? `Monthly QA · ${-dueIn} days overdue` : dueIn === 0 ? "Monthly QA due today" : `Monthly QA due ${month.slice(5)}/${schedule.dueDay}`) : "Monthly checklist"}
+          </Link>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {monthly.map((m) => {
-            const complete = m.done === MONTHLY_CHECKLIST.length;
-            const missing = MONTHLY_CHECKLIST.length - m.done;
-            const due = complete
-              ? m.review ? { tone: "warn" as const, text: "Tests found · review needed" } : { tone: "ok" as const, text: "Tests found" }
-              : m.count === 0
-                ? dueIn < 0
-                  ? { tone: "bad" as const, text: `Overdue by ${-dueIn} day${-dueIn === 1 ? "" : "s"}` }
-                  : { tone: dueIn <= 3 ? ("warn" as const) : ("muted" as const), text: `Due in ${dueIn} day${dueIn === 1 ? "" : "s"}` }
-                : { tone: dueIn < 0 ? ("bad" as const) : ("warn" as const), text: `${missing} test${missing === 1 ? "" : "s"} missing` };
+        <div className={`${scannerColumns} hidden border-y bg-muted/35 px-5 py-2 text-xs font-medium text-muted-foreground md:grid`} aria-hidden>
+          <span>Scanner</span><span>Latest Daily PDF</span><span>Daily status</span><span>Monthly tests</span>
+        </div>
+        <ul className="divide-y">
+          {scanners.map(({ scanner, daily, issue, monthly }) => {
+            const latest = daily[0];
+            const target = issue?.report ?? latest;
+            const status = issue && QA_ALERTS[issue.alert];
+            const statusLabel = status?.label ?? (latest?.printedStatus === "OK" ? "Printed OK" : "Result unavailable");
             return (
-              <article key={m.s.id} className="relative overflow-hidden rounded-lg border bg-card p-4">
-                <div className="absolute inset-y-0 left-0 w-1" style={{ background: scanColor[m.s.id] }} />
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <h3 className="flex items-center gap-2 font-medium"><ScannerDot id={m.s.id} />{m.s.name}</h3>
-                  <Pill tone={due.tone}>{due.text}</Pill>
+              <li key={scanner.id} className={`${scannerColumns} px-4 py-3 first:border-t md:px-5 md:first:border-t-0`}>
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <ScannerDot id={scanner.id} />
+                  <div>
+                    <p className="font-semibold">{scanner.name}</p>
+                    {scanner.id === "drive" && <p className="text-xs text-muted-foreground">{scanner.location}</p>}
+                  </div>
                 </div>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {m.count === 0 ? "No monthly report filed yet this month"
-                    : `${m.count} monthly report${m.count > 1 ? "s" : ""}${m.last ? ` · last ${fmtDate(m.last)}` : ""}`}
-                </p>
-                <p className="mt-3 font-mono text-2xl font-medium">{m.done}/{MONTHLY_CHECKLIST.length} <span className="text-sm font-normal text-muted-foreground">tests found</span></p>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div className="h-full rounded-full" style={{ width: `${(m.done / MONTHLY_CHECKLIST.length) * 100}%`, background: scanColor[m.s.id] }} />
+                <div className="text-sm">
+                  <span className="mr-2 text-xs text-muted-foreground md:sr-only">Daily PDF</span>
+                  {latest ? <span className="font-mono tabular-nums">{latest.time.slice(0, 5)}</span> : <span className="text-muted-foreground">—</span>}
+                  {daily.length > 1 && <span className="ml-2 text-xs text-muted-foreground md:ml-0 md:block">{daily.length} reports</span>}
                 </div>
-                {m.missing.length > 0 && (
-                  <p className="mt-3 text-sm text-muted-foreground">
-                    Still missing: {m.missing.slice(0, 3).map((c) => c.label).join(", ")}
-                    {m.missing.length > 3 ? ` +${m.missing.length - 3} more` : ""}
-                  </p>
+                {target ? (
+                  <Link to="/reports" search={{ scanner: scanner.id, date: today, type: "Daily" }} state={{ qaReportId: target.id }}
+                    className="group flex w-fit items-center gap-1 text-sm" aria-label={`${scanner.name} Daily report · ${statusLabel}`}>
+                    <Pill tone={status?.tone ?? (latest?.printedStatus === "OK" ? "ok" : "muted")}>{statusLabel}</Pill>
+                    {issue && latest && target.id !== latest.id && <span className="text-xs text-muted-foreground">{target.time.slice(0, 5)}</span>}
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground group-hover:text-primary" aria-hidden />
+                  </Link>
+                ) : (
+                  <Link to="/reports" search={{ scanner: scanner.id, view: "calendar", month }} className="w-fit hover:underline"
+                    aria-label={`${scanner.name} calendar · ${dailyExpected ? "Daily missing" : "Not scheduled"}`}>
+                    <Pill tone={dailyExpected ? "warn" : "muted"}>{dailyExpected ? "Daily missing" : "Not scheduled"}</Pill>
+                  </Link>
                 )}
-                {m.waiting.length > 0 && <p className="mt-1 text-sm text-muted-foreground">Waiting to file in Review: {m.waiting.join(", ")}</p>}
-                {m.review > 0 && <p className="mt-1 text-sm text-warn">{m.review} filed {m.review === 1 ? "report needs" : "reports need"} review</p>}
-                {m.flagged > 0 && <p className="mt-1 text-sm text-destructive">{m.flagged} reading{m.flagged > 1 ? "s" : ""} outside printed limits</p>}
-              </article>
+                <Link to="/monthly" search={{ scanner: scanner.id, month }} className="group flex w-fit items-center gap-2 text-sm hover:text-primary"
+                  aria-label={`${scanner.name} Monthly · ${monthly.done} of ${MONTHLY_CHECKLIST.length} tests found`}>
+                  <span className="text-xs text-muted-foreground md:sr-only">Monthly</span>
+                  <span className="font-mono font-medium tabular-nums">{monthly.done}/{MONTHLY_CHECKLIST.length}</span>
+                  <span className="hidden h-1.5 w-9 overflow-hidden rounded-full bg-muted xl:block" aria-hidden>
+                    <span className="block h-full rounded-full" style={{ width: `${monthly.done / MONTHLY_CHECKLIST.length * 100}%`, background: scanColor[scanner.id] }} />
+                  </span>
+                  <ChevronRight className="size-4 text-muted-foreground group-hover:text-primary" aria-hidden />
+                </Link>
+              </li>
             );
           })}
-        </div>
-        <p className="mt-3 text-sm text-muted-foreground">Counts come from filed Monthly reports. Filed exceptions can still need review.</p>
+        </ul>
       </section>
+
+      {reviewCount > 0 && (
+        <section className="mt-5 rounded-xl border bg-card" aria-labelledby="review-queue-heading">
+          <h2 id="review-queue-heading" className="px-4 pt-4 text-lg font-semibold sm:px-5">Review queue</h2>
+          <div className="grid gap-2 p-4 sm:grid-cols-3 sm:px-5">
+            <ReviewLink lane="exceptions" label="QA exceptions" count={exceptions} />
+            <ReviewLink lane="filing" label="Filing decisions" count={filing} />
+            <ReviewLink lane="failed" label="Import issues" count={importIssues} />
+          </div>
+        </section>
+      )}
+      {trends.length > 0 && (
+        <details className="mt-5 rounded-xl border bg-card px-4 py-3 text-sm sm:px-5">
+          <summary className="cursor-pointer font-medium">Trend warnings ({trends.length})</summary>
+          <ul className="mt-2 divide-y text-muted-foreground">
+            {trends.map((warning) => <li key={`${warning.scanner}-${warning.metric}-${warning.context}`} className="py-2">
+              <Link to="/trends" search={{ scanner: warning.scanner, metric: warning.metric }} state={{ qaTrendContext: warning.context }} className="hover:underline">{warning.scannerName} · {warning.label} ({warning.context}) moved {warning.direction === "rising" ? "higher" : "lower"} in 3 consecutive reports and remains within its printed limits.</Link>
+            </li>)}
+          </ul>
+        </details>
       )}
     </div>
   );
 }
 
-function Summary({ label, value, tone, icon: Icon, to }: { label: string; value: string; tone?: "bad" | undefined; icon: LucideIcon; to: "/reports" | "/review" | "/monthly" }) {
+function ReviewLink({ lane, label, count }: { lane: "exceptions" | "filing" | "failed"; label: string; count: number }) {
   return (
-    <Link to={to} className="group rounded-xl border bg-card p-4 shadow-sm transition-colors hover:border-primary/50 focus-visible:outline-2 focus-visible:outline-ring">
-      <div className="mb-3 flex items-center justify-between">
-        <Icon className={tone === "bad" ? "size-5 text-destructive" : "size-5 text-primary"} />
-        <ArrowRight className="size-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-      </div>
-      <p className={tone === "bad" ? "font-mono text-2xl font-semibold tracking-tight text-destructive" : "font-mono text-2xl font-semibold tracking-tight"}>{value}</p>
-      <p className="mt-1 text-sm text-muted-foreground">{label}</p>
+    <Link to="/review" search={{ lane }} className="group flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm hover:border-primary/50">
+      <span className="font-mono font-semibold tabular-nums text-primary">{count}</span>{label}
+      <ChevronRight className="ml-auto size-4 text-muted-foreground group-hover:text-primary" aria-hidden />
     </Link>
-  );
-}
-
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div>
-      <p className="text-sm text-muted-foreground">{label}</p>
-      <p className="font-mono text-2xl font-medium">{value}</p>
-      {sub && <p className="text-sm text-muted-foreground">{sub}</p>}
-    </div>
   );
 }

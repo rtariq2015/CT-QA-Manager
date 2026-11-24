@@ -23,6 +23,7 @@ export interface DesktopBridge {
   hasLogin(name: string): Promise<boolean>;
   saveCopy(rel: string, data: Uint8Array, previous?: string[], metadata?: CatalogMetadata): Promise<{ ok: boolean; path?: string; existed?: boolean; error?: string; catalogError?: string }>;
   openLibrary(): Promise<{ ok: boolean; path: string; error?: string }>;
+  testFolder(s: Source): Promise<{ ok: boolean; error?: string }>;
   readFolder(s: Source, incremental?: boolean): Promise<{ ok: boolean; error?: string; diagnostic?: { code: string; nativeCode?: number }; unreadableFiles?: string[]; unchanged?: number; files: { name: string; data: Uint8Array; sourceKey?: string }[] }>;
 }
 export const desktop = (): DesktopBridge | undefined =>

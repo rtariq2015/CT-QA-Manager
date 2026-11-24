@@ -106,19 +106,19 @@ export function AppShell() {
             {isDesktop && (
               <Button variant="outline" className="px-3" aria-label="Open saved PDFs folder" title="Open the QA Library folder with every saved PDF, organized by scanner, year, month and type"
                 onClick={async () => { const r = await desktop()?.openLibrary(); if (r && !r.ok) log("error", "folder", `Could not open ${r.path}: ${r.error}`); }}>
-                <Library className="size-4" /><span className="hidden sm:inline">Saved PDFs</span>
+                <Library className="size-4" /><span className="hidden lg:inline">Open saved PDFs</span>
               </Button>
             )}
             <button onClick={() => setLogOpen(true)} className="relative flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted" aria-label="Live activity log">
-              <ScrollText className="size-4" /><span className="hidden md:inline">Log</span>
+              <ScrollText className="size-4" /><span className="hidden lg:inline">Log</span>
               {lastErr > seenErr && <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-destructive" />}
             </button>
             <button onClick={() => setKeys(true)} className="hidden items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted md:flex" aria-label="Keyboard shortcuts">
-              <Keyboard className="size-4" />Shortcuts
+              <Keyboard className="size-4" /><span className="hidden lg:inline">Shortcuts</span>
             </button>
             <button onClick={toggleTheme} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted" aria-label="Switch light or dark mode">
               {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
-              <span>{theme === "dark" ? "Light" : "Dark"}</span>
+              <span className="hidden lg:inline">{theme === "dark" ? "Light" : "Dark"}</span>
             </button>
           </div>
         </header>

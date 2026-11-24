@@ -12,8 +12,11 @@ export function FailedImports() {
   if (!current) return <p className="text-muted-foreground">No import issues to review.</p>;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
-      <div className="max-h-80 overflow-y-auto rounded-lg border bg-card" aria-label="Failed PDFs">
+    <div className="grid items-start gap-3 min-[900px]:grid-cols-[minmax(9.5rem,11rem)_minmax(0,1fr)] xl:grid-cols-[12rem_minmax(0,1fr)]">
+      <select className="h-9 min-w-0 rounded-md border bg-card px-2 text-sm min-[900px]:hidden" aria-label="Select failed PDF" value={current.id} onChange={(event) => setPicked(event.target.value)}>
+        {failedImports.map((failure) => <option key={failure.id} value={failure.id}>{failure.fileName}</option>)}
+      </select>
+      <div className="hidden max-h-[62vh] overflow-y-auto rounded-lg border bg-card min-[900px]:block" aria-label="Failed PDFs">
         {failedImports.map((failure) => (
           <Button key={failure.id} variant={current.id === failure.id ? "secondary" : "ghost"}
             className="h-auto w-full justify-start whitespace-normal break-all px-3 py-2 text-left"
