@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
-import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, it } from "vitest";
@@ -55,6 +56,45 @@ it("reopens parsed reports, tracks moved originals and invalidates missing or ch
     expect(reopened.hasSource(originalStamp)).toBe(false);
     expect(reopened.reports("ctqa://app/")[0]?.originalUrl).toBeUndefined();
     expect(reopened.pdf("../../private")).toBeUndefined();
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+it("opens the healthy catalog entries after damaged metadata is written to disk", () => {
+  const folder = mkdtempSync(join(tmpdir(), "ctqa-catalog-test-"));
+  try {
+    const bytes = Buffer.from("%PDF-example");
+    const healthy: Report = {
+      id: "healthy", fileName: "healthy.pdf", scanner: "flash", type: "Daily", suggested: "Daily",
+      date: "2026-11-23", time: "08:00", sizeKb: 1, confidence: "certain", needsReview: false, pages: 1,
+      printedStatus: "OK", measurements: [{ metric: "noise", unit: "HU", context: "Tube A", lower: 1, upper: 3, value: 2, baseline: null, page: 1 }],
+    };
+    const catalog = createCatalog(() => folder);
+    const goodFile = join(folder, healthy.fileName);
+    writeFileSync(goodFile, bytes);
+    catalog.save({ reportId: healthy.id, report: healthy, target: goodFile, bytes });
+
+    const corruptions = {
+      "bad-reading": { measurements: [null] },
+      "bad-section": { printedSections: [null] },
+      "bad-time": { time: "99:99" },
+      "bad-date": { date: "2026-02-30" },
+      "bad-pages": { pages: 0 },
+    };
+    for (const [id, damage] of Object.entries(corruptions)) {
+      const target = join(folder, `${id}.pdf`);
+      writeFileSync(target, bytes);
+      const source = sourceFingerprint(target, statSync(target));
+      catalog.save({ reportId: id, report: { ...healthy, id }, target, bytes, source });
+      const entryPath = join(folder, ".catalog", `${createHash("sha256").update(id).digest("hex")}.json`);
+      const entry = JSON.parse(readFileSync(entryPath, "utf8"));
+      writeFileSync(entryPath, JSON.stringify({ ...entry, report: { ...entry.report, ...damage } }));
+      const reopened = createCatalog(() => folder);
+      expect(reopened.reports("ctqa://app/").map((report) => report.id)).toEqual([healthy.id]);
+      expect(reopened.hasSource(source)).toBe(false);
+      expect(readFileSync(target)).toEqual(bytes);
+    }
   } finally {
     rmSync(folder, { recursive: true, force: true });
   }

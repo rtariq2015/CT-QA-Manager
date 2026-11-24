@@ -37,6 +37,8 @@ export interface Measurement {
   kv?: number;
   kernel?: string;
   referenceDate?: string;
+  /** Whether the printed test heading identifies a reference run. Older readings may lack this detail. */
+  referenceTest?: boolean;
   limitSource?: "printed";
   page: number;
 }

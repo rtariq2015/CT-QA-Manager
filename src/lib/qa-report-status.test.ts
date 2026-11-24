@@ -135,6 +135,39 @@ it("keeps reference results separate from the latest routine result", () => {
   expect(coverage.items.find(({ metric }) => metric === "mtf50")).toMatchObject({ current: { report: routine, status: "not-ok" }, history: [{ report: reference, status: "ok", reference: true }] });
 });
 
+it("retains a printed Monthly failure when its test name has extra white space", () => {
+  const report: Report = { ...sample, measurements: [{ ...mtf, metric: "slice" }], printedSections: [{ label: "  Slice\u00a0 thickness  ", status: "NOT OK", page: 2 }] };
+  const coverage = monthlyCoverage([report], "flash", "2026-07");
+  expect(coverage.items.find(({ metric }) => metric === "slice")?.current?.status).toBe("not-ok");
+  expect(coverage.exceptions).toBe(1);
+});
+
+it("keeps an out-of-limit reference reading in the history of a passing Monthly retest from the same PDF", () => {
+  const report: Report = { ...sample, measurements: [{ ...mtf, page: 3, value: 13, referenceTest: true }, { ...mtf, referenceTest: false }], printedSections: [
+    { label: "Reference MTF", status: "OK", page: 3 },
+    { label: "MTF", status: "OK", page: 2 },
+  ] };
+  const coverage = monthlyCoverage([report], "flash", "2026-07");
+  expect(coverage.items.find(({ metric }) => metric === "mtf50")).toMatchObject({
+    current: { report, status: "ok", page: 2, reference: false, outside: 0 },
+    history: [{ report, status: "out-of-limit", page: 3, reference: true, outside: 1 }],
+  });
+  expect(coverage).toMatchObject({ done: 1, passed: 1, exceptions: 0, flagged: 1 });
+});
+
+it("flags an older out-of-limit reading that cannot be assigned to the routine or reference test", () => {
+  const report: Report = { ...sample, measurements: [{ ...mtf, value: 13 }], printedSections: [
+    { label: "Reference MTF", status: "OK", page: 2 },
+    { label: "MTF", status: "OK", page: 2 },
+  ] };
+  const coverage = monthlyCoverage([report], "flash", "2026-07");
+  expect(coverage.items.find(({ metric }) => metric === "mtf50")).toMatchObject({
+    current: { status: "unassigned", reference: false },
+    history: [{ status: "ok", reference: true }],
+  });
+  expect(coverage).toMatchObject({ passed: 0, exceptions: 1, flagged: 1 });
+});
+
 it("retains the warning when two results share a timestamp", () => {
   const good: Report = { ...sample, printedSections: [{ label: "MTF", status: "OK", page: 2 }] };
   const bad: Report = { ...good, id: "test-tie", time: "08:00", printedSections: [{ label: "MTF", status: "NOT OK", page: 3 }] };

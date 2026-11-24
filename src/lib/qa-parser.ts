@@ -1,6 +1,6 @@
 import { printedProgram } from "./qa-filing-evidence";
 import { PdfReadError } from "./qa-read-error";
-import { distinctMeasurements, validReportTimestamp } from "./qa-parser-validation";
+import { distinctMeasurements, isReferenceTest, normalizeTestLabel, validReportTimestamp } from "./qa-parser-validation";
 import { type Measurement, type MetricId, type Report, type ScannerId } from "./qa-data";
 import { isVa40, parseVa40Pages } from "./qa-parser-va40";
 
@@ -12,7 +12,7 @@ const sliceHeading = /^Slice (\d+)\b/;
 const procedure = "(?:Daily|Monthly|IEC\\s+Constancy|IEC\\s+Acceptance|DHHS\\s*Acceptance)";
 const detailHeading = new RegExp(`^(?:\\d+\\.\\s*)?Quality\\s+${procedure}\\s+(.+)$`, "i");
 const summaryRow = new RegExp(`^\\s*\\d+\\.\\s*Quality\\s+${procedure}\\s+(.+?)\\s+(NOT\\s+OK|OK)\\s*[.…\\s]*(\\d+)\\s*$`, "i");
-const tableBoundary = /^(?:Test:|(?:\d+\.\s*)?Quality|Results for|Water Value Results|Common Parameters)/;
+const tableBoundary = /^(?:Test:|(?:\d+\.\s*)?Quality|Results for|Water Value Results|Common Parameters)/i;
 
 const NUMBER = "[-+]?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?";
 const readings = new RegExp(`(${NUMBER})\\s*(HU|lp/cm|mm|mGy/100mAs|1/HUcm)(?:\\s*\\((${NUMBER})\\))?`, "g");
@@ -21,7 +21,8 @@ const positionValue = new RegExp(`^(${NUMBER})(?:\\s*\\((${NUMBER})\\))?$`);
 const positionLimits = new RegExp(`^(${NUMBER})\\s*(?:\\.\\.\\.|…)\\s*(${NUMBER})$`);
 
 function detailLabel(line: string) {
-  return /\.{3}|…/.test(line) || summaryRow.test(line) ? undefined : detailHeading.exec(line)?.[1]?.trim();
+  const label = /\.{3}|…/.test(line) || summaryRow.test(line) ? undefined : detailHeading.exec(line)?.[1];
+  return label && normalizeTestLabel(label);
 }
 
 function singleTestResult(pages: PdfTextPage[]): PrintedSection | undefined {
@@ -54,7 +55,7 @@ function positionReadings(lines: string[], index: number, test: string, page: nu
   const measurements: Measurement[] = [];
   const add = (metric: MetricId, context: string, value: number, lower: number, upper: number, baseline: number | null) => {
     if (![value, lower, upper].every(Number.isFinite) || lower > upper || (baseline !== null && !Number.isFinite(baseline))) return;
-    measurements.push({ metric, context, value, unit: "mm", lower, upper, baseline, page, limitSource: "printed", ...(referenceDate ? { referenceDate } : {}) });
+    measurements.push({ metric, context, value, unit: "mm", lower, upper, baseline, page, referenceTest: isReferenceTest(test), limitSource: "printed", ...(referenceDate ? { referenceDate } : {}) });
   };
   if (line === "Result [mm]") {
     const metric = /^Lightmarker$/i.test(label) ? "lightmarker" : /^External Lightm\.$/i.test(label) ? "externalmarker" : /^Topogram Pos\.$/i.test(label) ? "topogram" : undefined;
@@ -94,7 +95,7 @@ export function parseSiemensPages(pages: PdfTextPage[], filename: string, sizeKb
   const sections: PrintedSection[] = [];
   for (const p of pages) for (const raw of p.lines) {
     const m = summaryRow.exec(raw.replaceAll("\u00a0", " "));
-    if (m?.[1] && m[2]) sections.push({ label: m[1].trim(), status: m[2].toUpperCase().replace(/\s+/g, " ") as PrintedStatus, page: Number(m[3]) });
+    if (m?.[1] && m[2]) sections.push({ label: normalizeTestLabel(m[1]), status: m[2].toUpperCase().replace(/\s+/g, " ") as PrintedStatus, page: Number(m[3]) });
   }
   const detailResult = sections.length ? undefined : singleTestResult(pages);
   if (detailResult) sections.push(detailResult);
@@ -197,7 +198,7 @@ export function parseSiemensPages(pages: PdfTextPage[], filename: string, sizeKb
             return;
           }
           const context = `${kv} kV · ${mode || "Body mode"} · Tube ${col.tube} · Slice ${row.slice}${col.position ? ` · ${col.position}` : ""}${kernel ? ` · ${kernel}` : ""}`;
-          measurements.push({ metric: col.metric, context, tube: col.tube, slice: Number(row.slice), mode: mode || "Body mode", kv, kernel, value, unit: v[2], lower, upper, baseline: v[3] ? Number(v[3]) : null, page: p.page, limitSource: "printed", ...(referenceDate ? { referenceDate } : {}) });
+          measurements.push({ metric: col.metric, context, tube: col.tube, slice: Number(row.slice), mode: mode || "Body mode", kv, kernel, value, unit: v[2], lower, upper, baseline: v[3] ? Number(v[3]) : null, page: p.page, referenceTest: isReferenceTest(currentTest ?? ""), limitSource: "printed", ...(referenceDate ? { referenceDate } : {}) });
         });
       }
       i = end - 1;

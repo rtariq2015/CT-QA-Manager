@@ -4,6 +4,7 @@ import { parseSiemensPages, type PdfTextPage } from "./qa-parser";
 import { isOutOfLimit, SCANNERS } from "./qa-data";
 import { hasOnlyContentsAndPageNumbers } from "./qa-pdf-content";
 import { needsParserRefresh, refreshParsedReport, REPORT_PARSER_REVISION } from "./qa-parser-upgrade";
+import { monthlyChecklistRows } from "./qa-monthly-status";
 
 const identity: PdfTextPage = { page: 1, lines: ["Product Name SOMATOM Drive", "Software Version syngo CT VB30A_SP10", "2026-11-11 07:05:14"] };
 const summary: PdfTextPage = { page: 2, lines: ["1. Quality Daily Noise OK................ 3", "2. Quality Daily Homogeneity NOT OK................ 6"] };
@@ -51,6 +52,30 @@ it("keeps a saved NOT OK and its readings during the one-time catalog recheck", 
   const upgraded = refreshParsedReport(saved, parsed);
   expect(upgraded).toMatchObject({ printedStatus: "NOT OK", parserRevision: REPORT_PARSER_REVISION, measurements: saved.measurements });
   expect(upgraded.printedSections?.find(({ label }) => label === "Homogeneity")?.status).toBe("NOT OK");
+  expect(needsParserRefresh(upgraded)).toBe(false);
+});
+
+it("attributes mixed MTF readings on the same page and upgrades only the older saved entry", () => {
+  const parsed = parseSiemensPages([identity, { page: 2, lines: [
+    "1. Quality IEC Constancy Reference  MTF NOT OK........3", "2. Quality IEC Constancy MTF OK........3",
+  ] }, { page: 3, lines: [
+    "1. Quality IEC Constancy Reference MTF", "Results for System A", "Slice 1 13 lp/cm 9 ... 12 lp/cm",
+    "2. Quality IEC Constancy MTF", "Results for System A", "Slice 1 10 lp/cm 9 ... 12 lp/cm",
+  ] }], "mixed-mtf.pdf", 24);
+  expect(parsed.measurements).toMatchObject([{ value: 13, referenceTest: true }, { value: 10, referenceTest: false }]);
+  const saved = {
+    ...parsed, type: "Monthly" as const, parserRevision: 1, originalUrl: "ctqa://app/saved-report/sample.pdf",
+    measurements: parsed.measurements.map(({ referenceTest: _referenceTest, ...measurement }) => measurement),
+    printedSections: [{ label: "Reference  MTF", status: "NOT OK" as const, page: 3 }, { label: "MTF", status: "OK" as const, page: 3 }],
+  };
+  expect(needsParserRefresh(saved, true)).toBe(true);
+  expect(needsParserRefresh({ ...saved, printedSections: saved.printedSections.slice(1) })).toBe(false);
+  const upgraded = refreshParsedReport(saved, parsed);
+  expect(upgraded.measurements).toEqual(parsed.measurements);
+  expect(upgraded.printedSections).toEqual(parsed.printedSections);
+  expect(monthlyChecklistRows([upgraded]).find(({ metric }) => metric === "mtf50")).toMatchObject({
+    current: { status: "ok", reference: false }, history: [{ status: "not-ok", reference: true }],
+  });
   expect(needsParserRefresh(upgraded)).toBe(false);
 });
 

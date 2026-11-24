@@ -6,7 +6,7 @@ import { reviewReason, triage } from "./qa-triage";
 import { saveArchivedReport } from "./qa-library";
 import { desktop } from "./qa-desktop";
 import { log } from "./qa-logger";
-import { needsParserRefresh, REPORT_PARSER_REVISION } from "./qa-parser-upgrade";
+import { needsParserRefresh } from "./qa-parser-upgrade";
 import { localDate, type Report, type ReportType } from "./qa-data";
 import { DEFAULT, normalizeConfig, SETTINGS_KEY, type Config } from "./qa-settings";
 
@@ -71,7 +71,7 @@ export function QaProvider({ children }: { children: ReactNode }) {
     void bridge?.listFailedImports().then(async (entries) => {
       if (!active) return;
       for (const entry of entries.sort((a, b) => a.at.localeCompare(b.at))) addFailedImport(entry);
-      const migrationKey = `qa-inbox-checked-${REPORT_PARSER_REVISION}`;
+      const migrationKey = "qa-inbox-checked-1";
       const candidates = entries.filter(({ code }) => code === "scanner-unrecognized");
       if (!candidates.length || localStorage.getItem(migrationKey)) return;
       const { isEmptyInboxPdf } = await import("./qa-pdf");
@@ -232,7 +232,7 @@ export function QaProvider({ children }: { children: ReactNode }) {
     if (!loaded || !catalogLoaded || filingBusy || startupFilingStarted.current) return;
     startupFilingStarted.current = true;
     const organize = async () => {
-      const candidates = latestReports.current.filter((report) => needsParserRefresh(report) && !currentOverrides.current[report.id]);
+      const candidates = latestReports.current.filter((report) => needsParserRefresh(report, Boolean(currentOverrides.current[report.id])));
       if (!desktop() || !candidates.length) return;
       const scan = startScan("saved-catalog");
       writingArchive.current = true;
@@ -247,8 +247,8 @@ export function QaProvider({ children }: { children: ReactNode }) {
           try {
             const { updated, bytes } = await recoverArchivedReport(report);
             const current = latestReports.current.find(({ id }) => id === report.id);
-            if (!current || current.originalUrl !== report.originalUrl || currentOverrides.current[report.id]) continue;
-            const filed = triage(updated);
+            if (!current || current.originalUrl !== report.originalUrl || !needsParserRefresh(current, Boolean(currentOverrides.current[report.id]))) continue;
+            const filed = filedReport(updated, currentOverrides.current);
             // Persist the parser revision even if the file stays where it was.
             const saved = await saveArchivedReport(filed, new Uint8Array(bytes), updated, undefined, true);
             setLocalReports((all) => all.map((item) => item.id === report.id && item.originalUrl === report.originalUrl ? updated : item));
