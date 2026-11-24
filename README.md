@@ -1,0 +1,84 @@
+# CT QA Manager
+
+**An offline Windows workspace for Siemens CT quality assurance.** Open scanner QA PDFs, track daily receipt and monthly checks, and file reports into a local QA Library.
+
+[**Download for Windows x64**](https://github.com/rtariq2015/CT-QA-Manager/releases/latest/download/CT-QA-Manager-Windows-x64.zip) · [Release notes](https://github.com/rtariq2015/CT-QA-Manager/releases/latest) · [CT QA Manager Pro](https://github.com/rtariq2015/QA-Manger)
+
+![CT QA Manager Today view with example scanner statuses](docs/images/today.png)
+
+## Start on Windows
+
+1. Download the Windows ZIP and extract the full folder to a writable location.
+2. Double-click **CT QA Manager.exe**. The app opens in its own window.
+3. Choose **Folders → Import from folder** for local PDFs, or save scanner locations under **Settings**. Network shares require access to the network that hosts them.
+
+Use **Open saved PDFs** to open the **QA Library** next to the program. Keep the full program folder together when copying to another computer or USB drive. Before upgrading, keep a copy of your QA Library and export a settings and filing backup.
+
+## Update an existing Windows copy
+
+1. Close CT QA Manager and extract the [smaller Windows Update ZIP](https://github.com/rtariq2015/CT-QA-Manager/releases/latest/download/CT-QA-Manager-Update-x64.zip).
+2. Double-click **Apply-Update.cmd** and paste the path of the folder containing **CT QA Manager.exe**.
+3. Open the program again. The update replaces the app files and keeps the previous app files as a backup.
+
+The updater checks the installed Electron version. Use the full Windows ZIP if the runtime changes.
+
+## Copy scanner settings
+
+Click **Save** in Windows Settings to write **Settings.json** beside the executable. Copy it beside the executable in another copy before launching, or use **Settings → Scanner folders → Import Settings.json**. The file contains folder paths, usernames and scheduling preferences. Passwords stay encrypted on the original PC and may need to be entered again on another Windows account or computer.
+
+## Workspaces
+
+| Workspace | What you can do |
+| --- | --- |
+| **Today** | See one row per scanner with Daily receipt, the printed result, and Monthly progress. Open the report or Review queue directly. |
+| **Reports** | Open the calendar first, switch to List, or search the library. Each date shows the latest Daily result with a separate alert icon for Monthly, Other, or earlier Daily reports with exceptions. |
+| **Review** | See QA exceptions first, acknowledge a filed report, change its filing, or open an import issue. |
+| **Monthly and Trends** | See the latest result for each Monthly test, open its history, and chart readings against their printed limits. |
+| **Folders and Exports** | Browse the organized library and export PDFs with a CSV and HTML summary. |
+| **Settings** | Test scanner folder connections, see the last successful check, set the QA schedule, and back up settings and filing decisions. |
+
+## How reports are handled
+
+The parser supports older Siemens syngo VB PDFs and syngo VA40A reports, including SOMATOM Drive, Flash, Edge, and X.cite. It retains printed results and supported readings with their printed tolerances. Incomplete extractions and exceptions stay visible for review. Filing is a document classification step and leaves the scanner’s printed result intact.
+
+The desktop app works offline with local PDFs. Windows protects saved network credentials, and backups include filing decisions and settings. The report library starts empty until you import PDFs or connect a scanner folder.
+
+## Reopen saved reports
+
+The Windows app stores a local report catalog with the PDFs in **QA Library**. At startup, Reports, Review and Trends can reopen saved records without reading the scanner PDFs again. Configured folders are checked in the background and unchanged, indexed PDFs are skipped.
+
+The first scan after upgrading from an earlier version builds the catalog. Older PDFs whose source folders are unavailable can be imported from a saved copy.
+
+## Review by scanner
+
+In **Review**, select a scanner to see its pending reports. When the selected PDF has matching reports, choose **Review matching reports**, inspect the list, and confirm **Daily**, **Monthly**, or **Other** once. Matches require the same scanner, software, printed tests, and measurement layout. Printed exceptions and incomplete reports stay available for individual review. **Undo last group** reverses the last group filing in the current session.
+
+## Organize Daily and Monthly reports
+
+Classification uses the printed procedure. An explicit Daily or Monthly title can identify the category. A Siemens IEC Constancy summary with only noise and homogeneity/water can classify as Daily. Advanced IEC Constancy tests such as MTF, light markers, and table position can classify as Monthly, including standalone checks. Identifiable acceptance and reference-only reports can file under Other. Ambiguous documents stay available for a filing decision.
+
+A classified PDF can still need review because it printed NOT OK or Aborted, contains an out-of-limit measurement, or has incomplete extraction. On Windows, the update checks affected saved PDFs once in the background and keeps manual filings. Use **Acknowledge** after checking a filed exception. Zero-byte files, verified blank pages, and verified contents-only PDFs are skipped. Source files stay available in their original folders.
+
+Today and Monthly show the number of tests with a recorded result and the number whose latest routine result printed OK. Each Monthly row opens the original page for its latest result. Earlier results and reference checks stay available in **Test history**. Aborted runs and out-of-limit readings have their own statuses.
+
+[View the Monthly checklist example](docs/images/monthly-results.png)
+
+## Review import issues
+
+If a PDF cannot be parsed, open **Review → Import issues** to see the reason and original PDF. Windows keeps a copy in **QA Library → Review Inbox**, so you can reopen it after restarting. **Mark reviewed** clears the item from the inbox while retaining the copy. The web workspace keeps originals for the current session.
+
+## Share a diagnostic
+
+Open **Log → Download diagnostic file** to share scan totals, read timings, cache hits, review reasons, and connection error codes. The diagnostic keeps the last 60 scans separately from the detailed activity log and omits file names, folder paths, and PDF contents. Use **Download log** for the detailed local history.
+
+## Build from source
+
+```sh
+npm install
+npm test
+npm run dev
+npm run build
+npm run package:windows
+```
+
+The package command creates `electron-release/CT QA Manager-win32-x64`. The desktop renderer uses a stable local address for settings and filing decisions across restarts. The web build processes PDFs locally after you select a folder or files using the browser.
