@@ -33,7 +33,7 @@ Click **Save** in Windows Settings to write **Settings.json** beside the executa
 | **Today** | See one row per scanner with Daily receipt, the printed result, and Monthly progress. Open the report or Review queue directly. |
 | **Reports** | Open the calendar first, switch to List, or search the library. Aborted tests and out-of-limit readings are highlighted on the report date. |
 | **Review** | See QA exceptions first, acknowledge a filed report, change its filing, or open an import issue. |
-| **Monthly and Trends** | See reported Monthly test results and open their original PDF pages. Chart supported measurements against their printed limits. |
+| **Monthly and Trends** | See the latest result for each Monthly test, open its history, and chart readings against their printed limits. |
 | **Folders and Exports** | Browse the organized library and export PDFs with a CSV and HTML summary. |
 | **Settings** | Test scanner folder connections, see the last successful check, set the QA schedule, and back up settings and filing decisions. |
 
@@ -59,7 +59,9 @@ Classification uses the printed procedure. An explicit Daily or Monthly title ca
 
 A classified PDF can still need review because it printed NOT OK or Aborted, contains an out-of-limit measurement, or has incomplete extraction. On Windows, the update checks affected saved PDFs once in the background and keeps manual filings. Use **Acknowledge** after checking a filed exception. Zero-byte files, verified blank pages, and verified contents-only PDFs are skipped. Source files stay available in their original folders.
 
-Today and Monthly count a tracked test when a filed Monthly PDF has a named printed result or readable measurements for it. The checklist shows the evidence and links to the original page. Printed NOT OK results remain flagged, and an aborted run still needs a recorded result.
+Today and Monthly show the number of tests with a recorded result and the number whose latest routine result printed OK. Each Monthly row opens the original page for its latest result. Earlier results and reference checks stay available in **Test history**. Aborted runs and out-of-limit readings have their own statuses.
+
+[View the Monthly checklist example](docs/images/monthly-results.png)
 
 ## Review import issues
 

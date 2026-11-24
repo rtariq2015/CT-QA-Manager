@@ -1,7 +1,7 @@
 {
   "name": "tanstack_start_ts",
   "private": true,
-  "version": "5.8.13",
+  "version": "5.8.14",
   "productName": "CT QA Manager",
   "main": "electron/main.cjs",
   "sideEffects": false,

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { AlertCircle, ArrowRight, CalendarDays, ChevronRight } from "lucide-react";
+import { AlertCircle, ArrowRight, CalendarDays, ChevronRight, History } from "lucide-react";
 import { useMemo } from "react";
 import { MONTHLY_CHECKLIST, SCANNERS, isScheduledQaDay, trendWarnings } from "@/lib/qa-data";
 import { monthlyCoverage } from "@/lib/qa-monthly-status";
@@ -65,7 +65,7 @@ function Today() {
           </Link>
         </div>
         <div className={`${scannerColumns} hidden border-y bg-muted/35 px-5 py-2 text-xs font-medium text-muted-foreground md:grid`} aria-hidden>
-          <span>Scanner</span><span>Latest Daily PDF</span><span>Daily status</span><span>Monthly results</span>
+          <span>Scanner</span><span>Latest Daily PDF</span><span>Daily status</span><span>Latest Monthly</span>
         </div>
         <ul className="divide-y">
           {scanners.map(({ scanner, daily, issue, monthly, monthlyFlags }) => {
@@ -101,12 +101,16 @@ function Today() {
                   </Link>
                 )}
                 <Link to="/monthly" search={{ scanner: scanner.id, month }} className="group flex w-fit items-center gap-2 text-sm hover:text-primary"
-                  aria-label={`${scanner.name} Monthly · ${monthly.done} of ${MONTHLY_CHECKLIST.length} tests with results${monthlyFlags ? ` · ${monthlyFlags} ${monthlyFlags === 1 ? "report" : "reports"} flagged` : ""}`}>
+                  aria-label={`${scanner.name} Monthly · ${monthly.passed} of ${MONTHLY_CHECKLIST.length} latest results printed OK · ${monthly.done} tests recorded${monthly.exceptions ? ` · ${monthly.exceptions} latest results flagged` : ""}${monthlyFlags ? ` · ${monthlyFlags} reports in exception history` : ""}`}>
                   <span className="text-xs text-muted-foreground md:sr-only">Monthly</span>
-                  <span className="font-mono font-medium tabular-nums">{monthly.done}/{MONTHLY_CHECKLIST.length}</span>
-                  {monthlyFlags > 0 && <AlertCircle className="size-4 shrink-0 text-warn" aria-hidden />}
+                  <span className="leading-tight">
+                    <span className="font-mono font-medium tabular-nums">{monthly.passed}/{MONTHLY_CHECKLIST.length} OK</span>
+                    <span className="block text-xs text-muted-foreground">{monthly.done} recorded</span>
+                  </span>
+                  {monthly.exceptions > 0 ? <AlertCircle className="size-4 shrink-0 text-warn" aria-hidden />
+                    : monthlyFlags > 0 && <History className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
                   <span className="hidden h-1.5 w-9 overflow-hidden rounded-full bg-muted xl:block" aria-hidden>
-                    <span className="block h-full rounded-full" style={{ width: `${monthly.done / MONTHLY_CHECKLIST.length * 100}%`, background: scanColor[scanner.id] }} />
+                    <span className="block h-full rounded-full" style={{ width: `${monthly.passed / MONTHLY_CHECKLIST.length * 100}%`, background: scanColor[scanner.id] }} />
                   </span>
                   <ChevronRight className="size-4 text-muted-foreground group-hover:text-primary" aria-hidden />
                 </Link>
