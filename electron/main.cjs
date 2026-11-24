@@ -351,6 +351,7 @@ handleAppMessage("ctqa:saveFailedImport", (_event, name, code, data) => {
   if (typeof name !== "string" || !inboxCodes.has(code)) throw new Error("Invalid failed import");
   fs.mkdirSync(inbox(), { recursive: true });
   const bytes = Buffer.from(data);
+  if (!bytes.length) return null;
   const id = createHash("sha256").update(bytes).digest("hex");
   const metadata = inboxPath(id, "json");
   if (fs.existsSync(metadata)) {
@@ -373,6 +374,8 @@ handleAppMessage("ctqa:listFailedImports", () => {
       try {
         const id = file.name.slice(0, -5);
         const entry = JSON.parse(fs.readFileSync(inboxPath(id, "json"), "utf8"));
+        const pdf = inboxPath(id, "pdf");
+        if (fs.existsSync(pdf) && fs.statSync(pdf).size === 0) return [];
         return !entry.reviewed && entry.id === id && typeof entry.fileName === "string" &&
           typeof entry.at === "string" && inboxCodes.has(entry.code) ? [entry] : [];
       } catch {

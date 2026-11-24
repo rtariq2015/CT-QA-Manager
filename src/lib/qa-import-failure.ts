@@ -10,6 +10,7 @@ export interface FailedImport {
 }
 
 export const failureLabels: Record<PdfFailureCode, string> = {
+  "empty-pdf": "The PDF is empty",
   "scanner-unrecognized": "Scanner identity could not be matched",
   "invalid-report-date": "Printed report date or time could not be read",
   "pdf-password-required": "The PDF requires a password",

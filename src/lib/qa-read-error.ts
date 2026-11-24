@@ -1,5 +1,5 @@
 export class PdfReadError extends Error {
-  constructor(readonly code: "scanner-unrecognized" | "invalid-report-date", message: string) {
+  constructor(readonly code: "scanner-unrecognized" | "invalid-report-date" | "empty-pdf", message: string) {
     super(message);
   }
 }

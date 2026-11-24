@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { SCANNERS, type ReportType, type ScannerId } from "@/lib/qa-data";
 import { matchingReviewReports, reviewMatchKey } from "@/lib/qa-review-matching";
 import { useQa } from "@/lib/qa-store";
-import { reviewAction, reviewReason } from "@/lib/qa-triage";
+import { reviewAction, reviewReason, reviewReasonCode } from "@/lib/qa-triage";
 import { PageHeader, ScannerLabel } from "@/components/qa/ui";
 import { ReportPreview } from "@/components/qa/ReportPreview";
 import { cn } from "@/lib/utils";
@@ -32,45 +32,48 @@ const CHOICES: { type: ReportType; key: string }[] = [
 ];
 
 function Review() {
-  const { pending, failedImports, file, organizePending, fileMatching, undo, filingBusy, lastFiling } = useQa();
+  const { pending, failedImports, file, fileMatching, undo, filingBusy, lastFiling } = useQa();
   const [scanner, setScanner] = useState<ScannerId | "all">("all");
-  const scoped = useMemo(() => scanner === "all" ? pending : pending.filter((r) => r.scanner === scanner), [pending, scanner]);
-  const counts = useMemo(() => {
-    const totals: Partial<Record<ScannerId, number>> = {};
-    for (const report of pending) totals[report.scanner] = (totals[report.scanner] ?? 0) + 1;
-    return totals;
+  const [view, setView] = useState<"filing" | "exceptions" | "failed">();
+  const lanes = useMemo(() => {
+    const filing: typeof pending = [];
+    const exceptions: typeof pending = [];
+    for (const report of pending) {
+      (reviewReasonCode(report) === "non-routine-report" ? filing : exceptions).push(report);
+    }
+    return { filing, exceptions };
   }, [pending]);
+  const active = view ?? (lanes.filing.length ? "filing" : lanes.exceptions.length ? "exceptions" : failedImports.length ? "failed" : "filing");
+  const lane = active === "failed" ? [] : lanes[active];
+  const scoped = scanner === "all" ? lane : lane.filter((r) => r.scanner === scanner);
+  const counts: Partial<Record<ScannerId, number>> = {};
+  for (const report of lane) counts[report.scanner] = (counts[report.scanner] ?? 0) + 1;
   const [batch, setBatch] = useState<{ ids: string[]; key: string; names: string[]; tests: string[] }>();
   const [batchType, setBatchType] = useState<ReportType | "">("");
-  const [view, setView] = useState<"filing" | "failed">();
-  const active = view ?? (pending.length || !failedImports.length ? "filing" : "failed");
+  const selectView = (next: typeof active) => {
+    setView(next);
+    setScanner("all");
+  };
   const selection = (
     <div className="mb-4 flex flex-wrap gap-2" aria-label="Review inbox views">
-      <Button variant={active === "filing" ? "default" : "outline"} aria-pressed={active === "filing"} onClick={() => setView("filing")}>Ready to review ({pending.length})</Button>
-      <Button variant={active === "failed" ? "default" : "outline"} aria-pressed={active === "failed"} onClick={() => setView("failed")}>Import issues ({failedImports.length})</Button>
+      <Button variant={active === "filing" ? "default" : "outline"} aria-pressed={active === "filing"} onClick={() => selectView("filing")}>Filing decisions ({lanes.filing.length})</Button>
+      <Button variant={active === "exceptions" ? "default" : "outline"} aria-pressed={active === "exceptions"} onClick={() => selectView("exceptions")}>QA exceptions ({lanes.exceptions.length})</Button>
+      <Button variant={active === "failed" ? "default" : "outline"} aria-pressed={active === "failed"} onClick={() => selectView("failed")}>Import issues ({failedImports.length})</Button>
     </div>
   );
   const [currentId, setCurrentId] = useState<string | undefined>(undefined);
   const current = scoped.find((r) => r.id === currentId) ?? scoped[0];
   const matching = useMemo(() => current ? matchingReviewReports(current, scoped) : [], [current, scoped]);
-  const filter = pending.length > 0 && (
+  const filter = lane.length > 0 && (
     <label className="mb-4 flex w-fit items-center gap-3 text-sm font-medium">
       Scanner
       <select value={scanner} className="h-10 rounded-md border bg-card px-3 text-sm"
         onChange={(event) => { setScanner(event.target.value as ScannerId | "all"); setCurrentId(undefined); }}>
-        <option value="all">All scanners ({pending.length})</option>
+        <option value="all">All scanners ({lane.length})</option>
         {SCANNERS.map((s) => <option value={s.id} key={s.id}>{s.name} ({counts[s.id] ?? 0})</option>)}
       </select>
     </label>
   );
-
-  const eligible = scoped.filter((report) => report.program === undefined && report.originalUrl);
-  const organize = async () => {
-    const { filed, needsReview, errors } = await organizePending(eligible.map(({ id }) => id));
-    const text = `${filed} organized · ${needsReview} still need review${errors ? ` · ${errors} PDFs could not be checked` : ""}`;
-    if (errors) toast.warning(text);
-    else toast.success(text);
-  };
 
   const undoRef = useRef(undo);
   useEffect(() => { undoRef.current = undo; }, [undo]);
@@ -84,7 +87,7 @@ function Review() {
   };
 
   const doFile = async (type: ReportType) => {
-    if (!current || filingBusy || active !== "filing") return;
+    if (!current || filingBusy || active === "failed") return;
     const idx = scoped.indexOf(current);
     const next = scoped[idx + 1] ?? scoped[idx - 1];
     try {
@@ -121,7 +124,7 @@ function Review() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (active !== "filing" || batch || filingBusy) return;
+      if (active === "failed" || batch || filingBusy) return;
       if ((e.target instanceof HTMLElement && e.target.closest("input,select,textarea,[contenteditable]")) || e.metaKey || e.ctrlKey) return;
       const k = e.key.toUpperCase();
       const c = CHOICES.find((x) => x.key === k);
@@ -150,10 +153,10 @@ function Review() {
   if (!current) {
     return (
       <div className="mx-auto max-w-3xl">
-        <PageHeader eyebrow="Review" title={pending.length ? "No reports for this scanner" : failedImports.length ? "No reports waiting to file" : "All caught up"} />
+        <PageHeader eyebrow="Review" title={lane.length ? "No reports for this scanner" : active === "exceptions" ? "No QA exceptions" : "No filing decisions"} />
         {selection}
         {filter}
-        <p className="text-lg text-muted-foreground">{pending.length ? "Choose another scanner to continue reviewing." : failedImports.length ? "Open Import issues to review PDFs that could not be filed." : "Every report is filed. New reports that need a decision will appear here."}</p>
+        <p className="text-lg text-muted-foreground">{lane.length ? "Choose another scanner to continue reviewing." : active === "exceptions" ? "Reported QA exceptions will appear here." : "Recognized reports are filed automatically."}</p>
         {lastFiling && <Button variant="outline" disabled={filingBusy} onClick={() => void undoFiling()} className="mt-4 inline-flex items-center gap-2 rounded-md border px-4 py-2 hover:bg-muted"><Undo2 className="size-4" />{lastFiling.batchId ? "Undo last group" : "Undo last filing"}</Button>}
       </div>
     );
@@ -167,12 +170,7 @@ function Review() {
       </PageHeader>
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-4">
         {selection}
-        <div className="flex flex-wrap items-baseline gap-x-3">
-          {filter}
-          {eligible.length > 0 && <Button variant="outline" size="sm" disabled={filingBusy} onClick={() => void organize()}>
-            Organize Daily / Monthly
-          </Button>}
-        </div>
+        {filter}
       </div>
       <div className="grid items-start gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
         <section className="overflow-hidden rounded-lg border bg-card lg:sticky lg:top-24">

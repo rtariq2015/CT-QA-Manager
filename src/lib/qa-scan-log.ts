@@ -1,5 +1,5 @@
 import type { PdfImportResult } from "./qa-pdf";
-import type { ScannerId } from "./qa-data";
+import type { ReportType, ScannerId } from "./qa-data";
 import type { FolderKind } from "./qa-settings";
 import { pdfReadErrorCode } from "./qa-read-error";
 import { reviewReasonCode } from "./qa-triage";
@@ -9,7 +9,7 @@ const HISTORY_LIMIT = 60;
 
 export interface ScanSummary {
   at: string;
-  source: FolderKind | "selected-files";
+  source: FolderKind | "selected-files" | "saved-catalog";
   configuredFolder?: number;
   durationMs: number;
   sourceReadMs: number;
@@ -17,6 +17,9 @@ export interface ScanSummary {
   unchanged?: number;
   read: number;
   failed: number;
+  empty: number;
+  automaticallyFiled: Partial<Record<ReportType, number>>;
+  filedForReview: number;
   cached: number;
   queuedForReview: number;
   printedNotOk: number;
@@ -51,7 +54,7 @@ export function startScan(source: ScanSummary["source"], sourceReadMs = 0, confi
   const timings: number[] = [];
   const summary: ScanSummary = {
     at: new Date().toISOString(), source, sourceReadMs, durationMs: 0, found: 0, read: 0,
-    failed: 0, cached: 0, queuedForReview: 0, printedNotOk: 0, saved: 0, archiveFailed: 0,
+    failed: 0, empty: 0, automaticallyFiled: {}, filedForReview: 0, cached: 0, queuedForReview: 0, printedNotOk: 0, saved: 0, archiveFailed: 0,
     readTimingMs: null, readErrors: {}, reviewReasons: {}, reportsByScanner: {},
     ...(unchanged ? { unchanged } : {}),
     ...(configuredFolder === undefined ? {} : { configuredFolder }),
@@ -59,6 +62,8 @@ export function startScan(source: ScanSummary["source"], sourceReadMs = 0, confi
   return {
     recordRead({ report, cached, readMs, saved, archiveError }: PdfImportResult) {
       summary.read++;
+      if (report.autoFiled) increment(summary.automaticallyFiled, report.type);
+      if (report.autoFiled && report.needsReview) summary.filedForReview++;
       increment(summary.reportsByScanner, report.scanner);
       if (cached) summary.cached++;
       else timings.push(readMs);
@@ -71,8 +76,12 @@ export function startScan(source: ScanSummary["source"], sourceReadMs = 0, confi
       if (archiveError !== undefined) summary.archiveFailed++;
     },
     recordFailure(error: unknown) {
-      summary.failed++;
-      increment(summary.readErrors, pdfReadErrorCode(error));
+      const code = pdfReadErrorCode(error);
+      if (code === "empty-pdf") summary.empty++;
+      else {
+        summary.failed++;
+        increment(summary.readErrors, code);
+      }
     },
     finish(found: number, sourceError?: ScanSummary["sourceError"]) {
       summary.found = found;

@@ -1,3 +1,4 @@
+import { pdfReadErrorCode } from "@/lib/qa-read-error";
 import { useEffect, useRef, useState } from "react";
 import { desktop } from "@/lib/qa-desktop";
 import { normalizeConfig, parseSettingsJson, SETTINGS_KEY, kindOf } from "@/lib/qa-settings";
@@ -28,7 +29,7 @@ async function* walk(dir: DirHandle): AsyncGenerator<File> {
  * Everything stays in this browser tab: the PDFs are never uploaded anywhere.
  */
 export function useFolderReader(onDone?: () => void, autoConnect = false) {
-  const { addReport, addFailedImport } = useQa();
+  const { addReport, addFailedImport, catalogReadyForScan } = useQa();
   const [busy, setBusy] = useState<string | null>(null);
   const scanning = useRef(false);
   const input = useRef<HTMLInputElement>(null);
@@ -51,7 +52,7 @@ export function useFolderReader(onDone?: () => void, autoConnect = false) {
     }
     log("info", "folder", `Opened folder "${folder}" (${kind}): ${total} PDFs found`);
     setConnection({ state: "reading", kind, folder, done: unreadableFiles.length + unchanged, total, failed: unreadableFiles.length, at: new Date().toISOString() });
-    let ok = 0, bad = unreadableFiles.length, saved = 0, unsaved = 0;
+    let ok = 0, bad = unreadableFiles.length, skipped = 0, saved = 0, unsaved = 0;
     const d = desktop();
     for (const file of list) {
       setBusy(`Reading ${file.name}…`);
@@ -61,15 +62,19 @@ export function useFolderReader(onDone?: () => void, autoConnect = false) {
         ok++;
         if (result.saved) saved++;
         if (result.archiveError) unsaved++;
-      } catch (error) { scan.recordFailure(error); bad++; }
-      setConnection({ done: ok + bad + unchanged, failed: bad });
+      } catch (error) {
+        scan.recordFailure(error);
+        if (pdfReadErrorCode(error) === "empty-pdf") skipped++;
+        else bad++;
+      }
+      setConnection({ done: ok + bad + skipped + unchanged, failed: bad });
     }
     setConnection({ state: "ready" });
     const summary = scan.finish(total);
     markFolderOpened(folder, kind, ok + unchanged);
-    log(bad || unsaved ? "warning" : "success", "folder", `Finished "${folder}": ${ok} read, ${unchanged} unchanged, ${bad} failed, ${summary.queuedForReview} for review, ${summary.cached} cached, ${saved} saved, ${unsaved} archive failures, ${summary.durationMs} ms total`);
+    log(bad || unsaved ? "warning" : "success", "folder", `Finished "${folder}": ${ok} read, ${unchanged} unchanged, ${bad} failed, ${skipped} empty, ${summary.queuedForReview} for review, ${summary.cached} cached, ${saved} saved, ${unsaved} archive failures, ${summary.durationMs} ms total`);
     setBusy(null);
-    const message = `${ok} reports read${d ? ` · ${saved} new PDFs saved to QA Library` : ""}${bad ? ` · ${bad} could not be read` : ""}${unsaved ? ` · ${unsaved} copies could not be saved` : ""}`;
+    const message = `${ok} reports read${d ? ` · ${saved} new PDFs saved to QA Library` : ""}${bad ? ` · ${bad} could not be read` : ""}${skipped ? ` · ${skipped} empty skipped` : ""}${unsaved ? ` · ${unsaved} copies could not be saved` : ""}`;
     if (bad || unsaved) toast.warning(message);
     else if (ok || !unchanged) toast.success(message);
     onDone?.();
@@ -111,7 +116,7 @@ export function useFolderReader(onDone?: () => void, autoConnect = false) {
     }
   }
   useEffect(() => {
-    if (!autoConnect) return;
+    if (!autoConnect || !catalogReadyForScan) return;
     let active = true;
     const loadSettings = async () => {
       try {
@@ -152,7 +157,7 @@ export function useFolderReader(onDone?: () => void, autoConnect = false) {
       window.removeEventListener("ctqa:settings", schedule);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [autoConnect, catalogReadyForScan]);
 
   async function openFolder() {
     const p = picker();

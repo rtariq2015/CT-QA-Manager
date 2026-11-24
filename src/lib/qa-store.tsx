@@ -1,5 +1,6 @@
 import type { FailedImport } from "./qa-import-failure";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type Context } from "react";
+import { startScan } from "./qa-scan-log";
 import { reviewMatchKey } from "./qa-review-matching";
 import { reviewReason, triage } from "./qa-triage";
 import { saveArchivedReport } from "./qa-library";
@@ -29,7 +30,7 @@ interface Store {
   addFailedImport: (failure: FailedImport) => void;
   markFailedImportReviewed: (failure: FailedImport) => Promise<void>;
   file: (id: string, type: ReportType) => Promise<boolean>;
-  organizePending: (ids: string[]) => Promise<{ filed: number; needsReview: number; errors: number }>;
+  catalogReadyForScan: boolean;
   fileMatching: (ids: string[], matchKey: string, type: ReportType) => Promise<{ filed: number; stopped: boolean; batchId?: number }>;
   undo: (expectedBatchId?: number) => Promise<Filing | undefined>;
   filingBusy: boolean;
@@ -72,9 +73,13 @@ export function QaProvider({ children }: { children: ReactNode }) {
     return () => { active = false; };
   }, [addFailedImport]);
   const [localReports, setLocalReports] = useState<Report[]>([]);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const [catalogReadyForScan, setCatalogReadyForScan] = useState(false);
   useEffect(() => {
     let active = true;
-    void desktop()?.listCatalog().then((saved) => {
+    const bridge = desktop();
+    if (!bridge) { setCatalogLoaded(true); return; }
+    void bridge.listCatalog().then((saved) => {
       if (!active || !saved.length) return;
       setLocalReports((current) => {
         const newer = new Set(current.map(({ id }) => id));
@@ -82,7 +87,8 @@ export function QaProvider({ children }: { children: ReactNode }) {
           .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
       });
       log("info", "folder", `Opened ${saved.length} reports from the local catalog`);
-    }).catch(() => log("error", "folder", "Could not open the saved report catalog"));
+    }).catch(() => log("error", "folder", "Could not open the saved report catalog"))
+      .finally(() => { if (active) setCatalogLoaded(true); });
     return () => { active = false; };
   }, []);
   const [history, setHistory] = useState<Filing[]>([]);
@@ -199,36 +205,49 @@ export function QaProvider({ children }: { children: ReactNode }) {
     }
   }, [setOverrides]);
 
-  const organizePending = useCallback(async (ids: string[]) => {
-    const result = { filed: 0, needsReview: 0, errors: 0 };
-    if (writingArchive.current) return result;
-    writingArchive.current = true;
-    setFilingBusy(true);
-    try {
-      const { recoverPrintedProgram } = await import("./qa-pdf");
-      for (const id of new Set(ids)) {
-        const report = latestReports.current.find((item) => item.id === id);
-        if (!report?.needsReview || report.program !== undefined || !report.originalUrl || currentOverrides.current[id]) continue;
-        try {
-          const { updated, bytes } = await recoverPrintedProgram(report);
-          const filed = triage(updated);
-          if (!filed.autoFiled) continue;
-          if (desktop()) await saveArchivedReport(filed, new Uint8Array(bytes), updated);
-          setLocalReports((all) => all.map((item) => item.id === id ? updated : item));
-          result.filed++;
-          if (filed.needsReview) result.needsReview++;
-          log("info", "filing", `${report.fileName} organized as ${filed.type}${filed.needsReview ? " (review needed)" : ""}`);
-        } catch {
-          result.errors++;
-          log("warning", "filing", `Could not check the filing category for ${report.fileName}`);
+  const startupFilingStarted = useRef(false);
+  useEffect(() => {
+    if (!loaded || !catalogLoaded || filingBusy || startupFilingStarted.current) return;
+    startupFilingStarted.current = true;
+    const organize = async () => {
+      const candidates = latestReports.current.filter((report) =>
+        report.needsReview && report.program === undefined && report.originalUrl && !currentOverrides.current[report.id]);
+      if (!desktop() || !candidates.length) return;
+      const scan = startScan("saved-catalog");
+      writingArchive.current = true;
+      setFilingBusy(true);
+      let filedCount = 0;
+      let errors = 0;
+      try {
+        const { recoverPrintedProgram } = await import("./qa-pdf");
+        for (const report of candidates) {
+          const start = performance.now();
+          try {
+            const { updated, bytes } = await recoverPrintedProgram(report);
+            const current = latestReports.current.find(({ id }) => id === report.id);
+            if (current?.originalUrl !== report.originalUrl || currentOverrides.current[report.id]) continue;
+            const filed = triage(updated);
+            // Save the recovered program even when the PDF stays in Other, so it is checked only once.
+            const saved = await saveArchivedReport(filed, new Uint8Array(bytes), updated, undefined, true);
+            setLocalReports((all) => all.map((item) => item.id === report.id && item.originalUrl === report.originalUrl ? updated : item));
+            scan.recordRead({ report: filed, cached: false, readMs: Math.round(performance.now() - start), saved });
+            if (filed.autoFiled) filedCount++;
+          } catch (error) {
+            scan.recordFailure(error);
+            errors++;
+            log("warning", "filing", `Could not check the filing category for ${report.fileName}`);
+          }
         }
+        log(errors ? "warning" : "info", "filing", `Automatic catalog pass: ${filedCount} filed, ${errors} could not be checked`);
+      } finally {
+        scan.finish(candidates.length);
+        writingArchive.current = false;
+        setFilingBusy(false);
       }
-      return result;
-    } finally {
-      writingArchive.current = false;
-      setFilingBusy(false);
-    }
-  }, []);
+    };
+    void organize().catch(() => log("error", "filing", "Could not start automatic catalog filing"))
+      .finally(() => setCatalogReadyForScan(true));
+  }, [catalogLoaded, loaded, filingBusy]);
 
   const undo = useCallback(async (expectedBatchId?: number) => {
     const last = history[0];
@@ -266,7 +285,7 @@ export function QaProvider({ children }: { children: ReactNode }) {
 
   const value: Store = {
     today: clockDay, schedule,
-    reports, addReport, pending, failedImports, addFailedImport, markFailedImportReviewed, file, organizePending, fileMatching, undo, filingBusy, history, lastFiling: history[0],
+    reports, addReport, pending, failedImports, addFailedImport, markFailedImportReviewed, file, catalogReadyForScan, fileMatching, undo, filingBusy, history, lastFiling: history[0],
     theme, compact, overrides,
     restoreFilings: (f) => { const filings = importedFilings(f); setOverrides(filings); setHistory([]); log("info", "settings", `Backup restored: ${Object.keys(filings).length} filings`); },
     toggleTheme: () => setTheme((t) => { const n = t === "dark" ? "light" : "dark"; localStorage.setItem("qa-theme", n); return n; }),

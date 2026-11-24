@@ -28,10 +28,11 @@ export function reviewReason(r: Report): string | null {
 /** A filing category and a review flag describe different things. */
 export function triage(r: Report): Report {
   if (!r.needsReview) return r;
-  const routine = inferRoutineFiling(r);
+  const routine = inferRoutineFiling(r) ?? (r.program === "other" ? ("Other" as const) : undefined);
   if (routine) {
     const filed = { ...r, suggested: routine, type: routine, confidence: "likely" as const, autoFiled: true };
-    return { ...filed, needsReview: Boolean(reviewReasonCode(filed)) };
+    const reason = reviewReasonCode(filed);
+    return { ...filed, needsReview: reason !== null && reason !== "non-routine-report" };
   }
   if (r.program !== undefined) return { ...r, suggested: "Other" };
   // Existing catalog entries were filed using the rules active when they were imported.

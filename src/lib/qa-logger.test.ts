@@ -67,3 +67,18 @@ describe("support diagnostics", () => {
     });
   });
 });
+
+it("reports automatic folders and empty skips separately from QA exceptions", () => {
+  clearScanHistory();
+  const report = parseSiemensPages([
+    { page: 1, lines: ["Product Name SOMATOM Drive", "2026-11-02 07:49:14"] },
+    { page: 2, lines: ["1. Quality IEC Constancy MTF NOT OK........3"] },
+  ], "example.pdf", 1);
+  const scan = startScan("saved-catalog");
+  scan.recordRead({ report: { ...report, type: "Monthly", autoFiled: true }, cached: false, readMs: 42, saved: true });
+  scan.recordFailure(new PdfReadError("empty-pdf", "Empty file"));
+  expect(scan.finish(2)).toMatchObject({
+    read: 1, empty: 1, failed: 0, automaticallyFiled: { Monthly: 1 }, filedForReview: 1, queuedForReview: 1,
+  });
+  clearScanHistory();
+});

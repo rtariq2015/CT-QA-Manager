@@ -38,7 +38,7 @@ export function folderParts(r: Report): [string, string, string, string] {
 
 const archiveTypes: ReportType[] = ["Daily", "Monthly", "Other"];
 
-export async function saveArchivedReport(report: Report, data?: Uint8Array, original?: Report, source?: string) {
+export async function saveArchivedReport(report: Report, data?: Uint8Array, original?: Report, source?: string, requireCatalog = false) {
   const bridge = desktop();
   if (!bridge || report.source !== "uploaded" || (!data && !report.originalUrl)) return false;
 
@@ -58,7 +58,10 @@ export async function saveArchivedReport(report: Report, data?: Uint8Array, orig
     ...(source ? { source } : {}),
   });
   if (!result.ok) throw new Error(result.error ?? "Could not update the QA Library");
-  if (result.catalogError) log("warning", "folder", result.catalogError);
+  if (result.catalogError) {
+    if (requireCatalog) throw new Error(result.catalogError);
+    log("warning", "folder", result.catalogError);
+  }
   return !result.existed;
 }
 

@@ -1,3 +1,4 @@
+import { pdfReadErrorCode } from "@/lib/qa-read-error";
 import { filingLabel } from "@/lib/qa-triage";
 import { startScan } from "@/lib/qa-scan-log";
 import { tidyFileName } from "@/lib/qa-library";
@@ -39,7 +40,7 @@ function Reports() {
     if (!files) return;
     setReading(true); setImportMessage("");
     const scan = startScan("selected-files");
-    let count = 0; const errors: string[] = [];
+    let count = 0, skipped = 0; const errors: string[] = [];
     for (const file of Array.from(files)) {
       try {
         const result = await importQaPdf(file, addReport, addFailedImport);
@@ -48,10 +49,14 @@ function Reports() {
         setSelected(report);
         count++;
         if (archiveError) errors.push(`${file.name}: could not save to the QA Library (${archiveError})`);
-      } catch (error) { scan.recordFailure(error); errors.push(`${file.name}: ${error instanceof Error ? error.message : "Could not read this PDF"}`); }
+      } catch (error) {
+        scan.recordFailure(error);
+        if (pdfReadErrorCode(error) === "empty-pdf") skipped++;
+        else errors.push(`${file.name}: ${error instanceof Error ? error.message : "Could not read this PDF"}`);
+      }
     }
     scan.finish(files.length);
-    setReading(false); setImportMessage(`${count} local PDF${count === 1 ? "" : "s"} read. ${errors.join(" ")}`);
+    setReading(false); setImportMessage(`${count} local PDF${count === 1 ? "" : "s"} read. ${skipped ? `${skipped} empty skipped. ` : ""}${errors.join(" ")}`);
     if (picker.current) picker.current.value = "";
   };
   const [q, setQ] = useState("");

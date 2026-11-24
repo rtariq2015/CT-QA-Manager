@@ -1,7 +1,7 @@
 import { parseSiemensPages, type PdfTextPage } from "./qa-parser";
 import { log } from "./qa-logger";
 import type { FailedImport } from "./qa-import-failure";
-import { pdfReadErrorCode } from "./qa-read-error";
+import { PdfReadError, pdfReadErrorCode } from "./qa-read-error";
 import type { Report } from "./qa-data";
 import { desktop } from "./qa-desktop";
 import { saveArchivedReport } from "./qa-library";
@@ -30,9 +30,14 @@ export async function importQaPdf(
   let cached: boolean;
   try {
     bytes = await file.arrayBuffer();
+    if (!bytes.byteLength) throw new PdfReadError("empty-pdf", "The file is empty");
     ({ report: parsed, cached } = await readQaPdf(file, bytes, !!bridge));
   } catch (error) {
     const code = pdfReadErrorCode(error);
+    if (code === "empty-pdf") {
+      log("info", "file", `Skipped empty PDF ${file.name}`);
+      throw error;
+    }
     if (bridge && bytes) {
       try {
         const entry = await bridge.saveFailedImport(file.name, code, new Uint8Array(bytes));
@@ -97,7 +102,7 @@ async function readQaPdf(file: File, bytes: ArrayBuffer, preserveBytes: boolean)
     log(r.printedStatus === "NOT OK" ? "warning" : "success", "file", `Read ${file.name}: ${r.scanner}${r.software && r.software !== "Not available" ? ` (${r.software})` : ""}, looks like ${r.suggested}, ${r.measurements.length} readings, printed ${r.printedStatus ?? "n/a"}, ${ms} ms`);
     return { report: r, cached: false };
   } catch (e) {
-    log("error", "file", `Could not read ${file.name}: ${(e as Error).message}`);
+    if (pdfReadErrorCode(e) !== "empty-pdf") log("error", "file", `Could not read ${file.name}: ${(e as Error).message}`);
     throw e;
   }
 }
@@ -138,6 +143,18 @@ async function readInner(filename: string, bytes: ArrayBuffer) {
         row.parts.push({ x, text: item.str });
       }
       pages.push({ page: n, lines: rows.sort((a, b) => b.y - a.y).map(r => r.parts.sort((a, b) => a.x - b.x).map(p => p.text).join(" ")) });
+    }
+    if (pages.every(({ lines }) => lines.every((line) => !line.trim()))) {
+      // Image-only reports have drawing instructions and still need review.
+      let blank = true;
+      for (let n = 1; n <= document.numPages; n++) {
+        const page = await document.getPage(n);
+        if ((await page.getOperatorList()).fnArray.length) {
+          blank = false;
+          break;
+        }
+      }
+      if (blank) throw new PdfReadError("empty-pdf", "The PDF has no page content");
     }
     return parseSiemensPages(pages, filename, sizeKb);
   } finally { await task.destroy(); }

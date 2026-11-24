@@ -57,7 +57,7 @@ In **Review**, select a scanner to see its pending reports. When the selected PD
 
 Classification uses the printed procedure. An explicit Daily or Monthly title can identify the category. A Siemens IEC Constancy summary with only noise and homogeneity/water can classify as Daily. Advanced IEC Constancy tests such as MTF or light-marker checks can classify as Monthly. Acceptance and ambiguous documents stay available for a filing decision.
 
-A classified PDF can still need review because it printed NOT OK, contains an out-of-limit measurement, or has incomplete extraction. For older entries, **Review → Organize Daily / Monthly** checks saved originals and files only reports with enough printed evidence. Use **Acknowledge** after you have reviewed a filed exception.
+A classified PDF can still need review because it printed NOT OK, contains an out-of-limit measurement, or has incomplete extraction. On Windows, a background pass checks older saved originals automatically. Review separates filing decisions, QA exceptions, and import issues. Use **Acknowledge** after checking a filed exception. Zero-byte files and PDFs with verified blank pages are skipped.
 
 ## Review import issues
 

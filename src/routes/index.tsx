@@ -26,8 +26,11 @@ function Today() {
   const dailyExpected = isScheduledQaDay(today, schedule.days);
   const cards = useMemo(() => SCANNERS.map((s) => {
     const mine = reports.filter((r) => r.scanner === s.id);
-    const daily = mine.find((r) => r.date === today && r.type === "Daily");
-    const flagged = daily?.measurements.filter(isOutOfLimit) ?? [];
+    const dailyReports = mine.filter((r) => r.date === today && r.type === "Daily");
+    const daily = dailyReports[0];
+    const dailyNotOk = dailyReports.some((r) => r.printedStatus === "NOT OK");
+    const dailyNeedsReview = dailyReports.some((r) => r.needsReview);
+    const flagged = dailyReports.flatMap((r) => r.measurements.filter(isOutOfLimit));
     const monthlies = mine.filter((r) => r.date.startsWith(month) && r.type === "Monthly");
     const found = new Set(monthlies.flatMap((r) => r.measurements.map((m) => m.metric)));
     const done = MONTHLY_CHECKLIST.filter((c) => found.has(c.metric)).length;
@@ -35,7 +38,7 @@ function Today() {
       const iso = addDays(today, i - 6);
       return { iso, ok: mine.some((r) => r.date === iso && r.type === "Daily"), expected: isScheduledQaDay(iso, schedule.days) };
     });
-    return { s, daily, flagged, done, pending: pending.filter((p) => p.scanner === s.id).length, last7 };
+    return { s, daily, dailyNotOk, dailyNeedsReview, flagged, done, pending: pending.filter((p) => p.scanner === s.id).length, last7 };
   }), [reports, pending, month, today, schedule.days]);
 
   const reviewCount = pending.length + failedImports.length;
@@ -52,7 +55,7 @@ function Today() {
   const notOk = reports.filter((r) => r.printedStatus === "NOT OK" && r.date.startsWith(month));
   const attention = [
     ...cards.filter((c) => dailyExpected && !c.daily).map((c) => ({ key: `miss-${c.s.id}`, tone: "warn" as const, text: `${c.s.name}: today's Daily QA not received`, to: "/reports" as const })),
-    ...cards.filter((c) => c.daily?.printedStatus === "NOT OK").map((c) => ({ key: `bad-${c.s.id}`, tone: "bad" as const, text: `${c.s.name}: today's report prints NOT OK`, to: "/reports" as const })),
+    ...cards.filter((c) => c.dailyNotOk).map((c) => ({ key: `bad-${c.s.id}`, tone: "bad" as const, text: `${c.s.name}: today's report prints NOT OK`, to: "/reports" as const })),
     ...monthly.filter((m) => m.done < MONTHLY_CHECKLIST.length && dueIn <= 3).map((m) => ({
       key: `due-${m.s.id}`,
       tone: (dueIn < 0 ? "bad" : "warn") as "bad" | "warn",
@@ -120,7 +123,7 @@ function Today() {
 
       {tab === "daily" && (
       <div className="grid gap-4 sm:grid-cols-2">
-        {cards.map(({ s, daily, flagged, done, pending: p, last7 }) => (
+        {cards.map(({ s, daily, dailyNotOk, dailyNeedsReview, flagged, done, pending: p, last7 }) => (
           <article key={s.id} className="relative overflow-hidden rounded-xl border bg-card p-5 shadow-sm">
             <div className="absolute inset-y-0 left-0 w-1" style={{ background: scanColor[s.id] }} />
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -128,7 +131,7 @@ function Today() {
                 <h2 className="flex items-center gap-2 text-xl font-semibold"><ScannerDot id={s.id} />{s.name} · {s.location}</h2>
                 <p className="text-muted-foreground">{s.model} · {s.software}</p>
               </div>
-              {daily ? (daily.printedStatus === "NOT OK" ? <Pill tone="bad"><AlertTriangle className="size-3.5" />Printed NOT OK · {flagged.length} readings</Pill> : daily.needsReview ? <Pill tone="warn">Daily received · review needed</Pill> : <Pill tone="ok"><CheckCircle2 className="size-3.5" />Daily received</Pill>)
+              {daily ? (dailyNotOk ? <Pill tone="bad"><AlertTriangle className="size-3.5" />Printed NOT OK · {flagged.length} readings</Pill> : dailyNeedsReview ? <Pill tone="warn">Daily received · review needed</Pill> : <Pill tone="ok"><CheckCircle2 className="size-3.5" />Daily received</Pill>)
                 : <Pill tone={dailyExpected ? "warn" : "muted"}><CircleDashed className="size-3.5" />{dailyExpected ? "Daily missing" : "No Daily QA scheduled"}</Pill>}
             </div>
 
