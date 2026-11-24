@@ -1,3 +1,4 @@
+import { filingLabel } from "@/lib/qa-triage";
 import { tidyFileName } from "@/lib/qa-library";
 import { useState } from "react";
 import { ExternalLink, FileText } from "lucide-react";
@@ -20,7 +21,7 @@ export function ReportPreview({ report, highlightPage, initialView = "readings" 
         <div className="flex flex-wrap items-center gap-2">
           <Pill tone="muted">Local PDF</Pill>
           <Pill tone={status === "NOT OK" ? "bad" : status === "OK" ? "ok" : "muted"}>Printed result: {status}</Pill>
-          <Pill tone="muted">{report.needsReview ? "Filing pending" : `Filed as ${report.type}`}</Pill>
+          <Pill tone="muted">{filingLabel(report)}</Pill>
         </div>
         <h2 className="break-words text-lg font-semibold">{scanner.model}</h2>
         <p className="break-all font-mono text-sm font-medium">{tidyFileName(report)}</p>
@@ -33,7 +34,10 @@ export function ReportPreview({ report, highlightPage, initialView = "readings" 
             </div>
           : <p className="text-xs text-muted-foreground">The PDF is available for reports you open with "Open local PDFs" or Folders.</p>}
         {tubes.length > 1 && <div className="flex flex-wrap gap-2" aria-label="Tube filter">{["all", ...tubes].map(t => <Button key={t} size="sm" variant={tube === t ? "default" : "outline"} aria-pressed={tube === t} onClick={() => setTube(t)}>{t === "all" ? "Both tubes" : `Tube ${t}`}</Button>)}</div>}
-        {report.extractionNotes?.map(note => <p key={note} className="text-sm text-warn-foreground dark:text-warn">{note}</p>)}
+        {Boolean(report.extractionNotes?.length) && <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer">Extraction notes</summary>
+          {report.extractionNotes?.map((note) => <p key={note} className="mt-1">{note}</p>)}
+        </details>}
       </header>
       {showPdf && report.originalUrl && <iframe title={`PDF ${report.fileName}`} src={report.originalUrl} className="h-[75vh] w-full rounded-md border bg-card" />}
       {!showPdf && pages.map(page => {

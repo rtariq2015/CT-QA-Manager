@@ -1,3 +1,4 @@
+import { filingLabel } from "@/lib/qa-triage";
 import { startScan } from "@/lib/qa-scan-log";
 import { tidyFileName } from "@/lib/qa-library";
 import { createFileRoute } from "@tanstack/react-router";
@@ -109,7 +110,7 @@ function Reports() {
                 <span className="min-w-0 flex-1 truncate"><ScannerLabel id={r.scanner} /></span>
                 <span className="hidden flex-1 truncate font-mono text-sm text-muted-foreground md:block">{tidyFileName(r)}</span>
                 {r.printedStatus === "NOT OK" && <Pill tone="bad">NOT OK</Pill>}
-                <span className="hidden sm:inline"><Pill tone={r.needsReview ? "warn" : "muted"}>{r.needsReview ? "Filing pending" : r.type}</Pill></span>
+                <span className="hidden sm:inline"><Pill tone={r.needsReview ? "warn" : "muted"}>{r.needsReview ? filingLabel(r) : r.type}</Pill></span>
               </Button>
             ))}
           </div>

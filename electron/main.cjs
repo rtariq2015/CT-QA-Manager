@@ -110,7 +110,11 @@ function createWindow() {
     // Links in the prerendered HTML use paths. In the desktop app those routes belong in the hash.
     if (targetUrl.startsWith(APP_URL)) {
       const target = new URL(targetUrl);
-      void win.loadURL(`${APP_URL}#${target.pathname}${target.search}${target.hash}`);
+      const route = target.pathname === "/" && target.hash.startsWith("#/")
+        ? target.hash
+        : `#${target.pathname}${target.search}${target.hash}`;
+      const next = `${APP_URL}${route}`;
+      if (win.webContents.getURL() !== next) void win.loadURL(next);
     }
   });
 

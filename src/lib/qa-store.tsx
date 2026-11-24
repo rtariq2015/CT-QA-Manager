@@ -29,6 +29,7 @@ interface Store {
   addFailedImport: (failure: FailedImport) => void;
   markFailedImportReviewed: (failure: FailedImport) => Promise<void>;
   file: (id: string, type: ReportType) => Promise<boolean>;
+  organizePending: (ids: string[]) => Promise<{ filed: number; needsReview: number; errors: number }>;
   fileMatching: (ids: string[], matchKey: string, type: ReportType) => Promise<{ filed: number; stopped: boolean; batchId?: number }>;
   undo: (expectedBatchId?: number) => Promise<Filing | undefined>;
   filingBusy: boolean;
@@ -198,6 +199,37 @@ export function QaProvider({ children }: { children: ReactNode }) {
     }
   }, [setOverrides]);
 
+  const organizePending = useCallback(async (ids: string[]) => {
+    const result = { filed: 0, needsReview: 0, errors: 0 };
+    if (writingArchive.current) return result;
+    writingArchive.current = true;
+    setFilingBusy(true);
+    try {
+      const { recoverPrintedProgram } = await import("./qa-pdf");
+      for (const id of new Set(ids)) {
+        const report = latestReports.current.find((item) => item.id === id);
+        if (!report?.needsReview || report.program !== undefined || !report.originalUrl || currentOverrides.current[id]) continue;
+        try {
+          const { updated, bytes } = await recoverPrintedProgram(report);
+          const filed = triage(updated);
+          if (!filed.autoFiled) continue;
+          if (desktop()) await saveArchivedReport(filed, new Uint8Array(bytes), updated);
+          setLocalReports((all) => all.map((item) => item.id === id ? updated : item));
+          result.filed++;
+          if (filed.needsReview) result.needsReview++;
+          log("info", "filing", `${report.fileName} organized as ${filed.type}${filed.needsReview ? " (review needed)" : ""}`);
+        } catch {
+          result.errors++;
+          log("warning", "filing", `Could not check the filing category for ${report.fileName}`);
+        }
+      }
+      return result;
+    } finally {
+      writingArchive.current = false;
+      setFilingBusy(false);
+    }
+  }, []);
+
   const undo = useCallback(async (expectedBatchId?: number) => {
     const last = history[0];
     if (!last || writingArchive.current || (expectedBatchId !== undefined && last.batchId !== expectedBatchId)) return;
@@ -234,7 +266,7 @@ export function QaProvider({ children }: { children: ReactNode }) {
 
   const value: Store = {
     today: clockDay, schedule,
-    reports, addReport, pending, failedImports, addFailedImport, markFailedImportReviewed, file, fileMatching, undo, filingBusy, history, lastFiling: history[0],
+    reports, addReport, pending, failedImports, addFailedImport, markFailedImportReviewed, file, organizePending, fileMatching, undo, filingBusy, history, lastFiling: history[0],
     theme, compact, overrides,
     restoreFilings: (f) => { const filings = importedFilings(f); setOverrides(filings); setHistory([]); log("info", "settings", `Backup restored: ${Object.keys(filings).length} filings`); },
     toggleTheme: () => setTheme((t) => { const n = t === "dark" ? "light" : "dark"; localStorage.setItem("qa-theme", n); return n; }),

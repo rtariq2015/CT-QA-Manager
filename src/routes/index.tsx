@@ -39,7 +39,10 @@ function Today() {
   }), [reports, pending, month, today, schedule.days]);
 
   const reviewCount = pending.length + failedImports.length;
-  const monthly = useMemo(() => SCANNERS.map((s) => ({ s, ...monthlyCoverage(reports, s.id, month), waiting: monthlyWaiting(reports, s.id, month) })), [reports, month]);
+  const monthly = useMemo(() => SCANNERS.map((s) => ({
+    s, ...monthlyCoverage(reports, s.id, month), waiting: monthlyWaiting(reports, s.id, month),
+    review: pending.filter((r) => r.scanner === s.id && r.date.startsWith(month) && r.type === "Monthly").length,
+  })), [reports, pending, month]);
 
   const received = cards.filter((c) => c.daily).length;
   const [open, setOpen] = useState<string | null>(null);
@@ -125,7 +128,7 @@ function Today() {
                 <h2 className="flex items-center gap-2 text-xl font-semibold"><ScannerDot id={s.id} />{s.name} · {s.location}</h2>
                 <p className="text-muted-foreground">{s.model} · {s.software}</p>
               </div>
-              {daily ? (daily.printedStatus === "NOT OK" ? <Pill tone="bad"><AlertTriangle className="size-3.5" />Printed NOT OK · {flagged.length} readings</Pill> : <Pill tone="ok"><CheckCircle2 className="size-3.5" />Daily received</Pill>)
+              {daily ? (daily.printedStatus === "NOT OK" ? <Pill tone="bad"><AlertTriangle className="size-3.5" />Printed NOT OK · {flagged.length} readings</Pill> : daily.needsReview ? <Pill tone="warn">Daily received · review needed</Pill> : <Pill tone="ok"><CheckCircle2 className="size-3.5" />Daily received</Pill>)
                 : <Pill tone={dailyExpected ? "warn" : "muted"}><CircleDashed className="size-3.5" />{dailyExpected ? "Daily missing" : "No Daily QA scheduled"}</Pill>}
             </div>
 
@@ -163,7 +166,7 @@ function Today() {
             const complete = m.done === MONTHLY_CHECKLIST.length;
             const missing = MONTHLY_CHECKLIST.length - m.done;
             const due = complete
-              ? { tone: "ok" as const, text: "Complete" }
+              ? m.review ? { tone: "warn" as const, text: "Tests found · review needed" } : { tone: "ok" as const, text: "Tests found" }
               : m.count === 0
                 ? dueIn < 0
                   ? { tone: "bad" as const, text: `Overdue by ${-dueIn} day${-dueIn === 1 ? "" : "s"}` }
@@ -191,12 +194,13 @@ function Today() {
                   </p>
                 )}
                 {m.waiting.length > 0 && <p className="mt-1 text-sm text-muted-foreground">Waiting to file in Review: {m.waiting.join(", ")}</p>}
+                {m.review > 0 && <p className="mt-1 text-sm text-warn">{m.review} filed {m.review === 1 ? "report needs" : "reports need"} review</p>}
                 {m.flagged > 0 && <p className="mt-1 text-sm text-destructive">{m.flagged} reading{m.flagged > 1 ? "s" : ""} outside printed limits</p>}
               </article>
             );
           })}
         </div>
-        <p className="mt-3 text-sm text-muted-foreground">Counts come from filed Monthly reports only. Reports still waiting in Review are not counted yet.</p>
+        <p className="mt-3 text-sm text-muted-foreground">Counts come from filed Monthly reports. Filed exceptions can still need review.</p>
       </section>
       )}
     </div>

@@ -53,6 +53,12 @@ The first scan after upgrading from an earlier version builds the catalog. Older
 
 In **Review**, select a scanner to see its pending reports. When the selected PDF has matching reports, choose **Review matching reports**, inspect the list, and confirm **Daily**, **Monthly**, or **Other** once. Matches require the same scanner, software, printed tests, and measurement layout. Printed exceptions and incomplete reports stay available for individual review. **Undo last group** reverses the last group filing in the current session.
 
+## Organize Daily and Monthly reports
+
+Classification uses the printed procedure. An explicit Daily or Monthly title can identify the category. A Siemens IEC Constancy summary with only noise and homogeneity/water can classify as Daily. Advanced IEC Constancy tests such as MTF or light-marker checks can classify as Monthly. Acceptance and ambiguous documents stay available for a filing decision.
+
+A classified PDF can still need review because it printed NOT OK, contains an out-of-limit measurement, or has incomplete extraction. For older entries, **Review → Organize Daily / Monthly** checks saved originals and files only reports with enough printed evidence. Use **Acknowledge** after you have reviewed a filed exception.
+
 ## Review import issues
 
 If a PDF cannot be parsed, open **Review → Import issues** to see the reason and original PDF. Windows keeps a copy in **QA Library → Review Inbox**, so you can reopen it after restarting. **Mark reviewed** clears the item from the inbox while retaining the copy. The web workspace keeps originals for the current session.

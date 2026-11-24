@@ -1,3 +1,5 @@
+import type { PrintedProgram } from "./qa-filing-evidence";
+
 export type ReportType = "Daily" | "Monthly" | "Other";
 export type ScannerId = "xcite" | "flash" | "edge" | "drive";
 
@@ -47,6 +49,7 @@ export interface Report {
   sizeKb: number;
   type: ReportType;
   suggested: ReportType;
+  program?: PrintedProgram;
   confidence: "certain" | "likely" | "uncertain";
   needsReview: boolean;
   autoFiled?: boolean;

@@ -142,3 +142,16 @@ async function readInner(filename: string, bytes: ArrayBuffer) {
     return parseSiemensPages(pages, filename, sizeKb);
   } finally { await task.destroy(); }
 }
+
+/** Recover the printed procedure for older catalog records without replacing their QA results. */
+export async function recoverPrintedProgram(report: Report) {
+  const response = await fetch(report.originalUrl!);
+  if (!response.ok) throw new Error("The saved PDF could not be opened");
+  const bytes = await response.arrayBuffer();
+  const parsed = await readInner(report.fileName, bytes.slice(0));
+  if (parsed.scanner !== report.scanner || parsed.date !== report.date || parsed.time !== report.time) {
+    throw new Error("The saved PDF does not match this report");
+  }
+  const updated = { ...report, program: parsed.program ?? "unknown" as const };
+  return { updated, bytes };
+}

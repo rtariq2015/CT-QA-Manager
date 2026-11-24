@@ -1,3 +1,4 @@
+import { triage } from "./qa-triage";
 import { describe, expect, it } from "vitest";
 import { parseSiemensPages, type PdfTextPage } from "./qa-parser";
 import { isOutOfLimit, SCANNERS } from "./qa-data";
@@ -109,4 +110,20 @@ it("reads Siemens VB labels and summary rows with PDF spacing and dot-leader var
   expect(result.scanner).toBe("drive");
   expect(result.printedSections).toEqual([{ label: "Noise", status: "NOT OK", page: 3 }]);
   expect(result.printedStatus).toBe("NOT OK");
+});
+
+it("files explicitly printed IEC Constancy MTF as Monthly while keeping its printed exception in Review", () => {
+  const report = parseSiemensPages([
+    { page: 1, lines: ["Product Name SOMATOM Definition Flash", "2026-08-03 09:41:43", "Quality IEC Constancy"] },
+    { page: 2, lines: ["1. Quality IEC Constancy Lightmarker OK........3", "2. Quality IEC Constancy MTF NOT OK........4"] },
+  ], "test-monthly.pdf", 20);
+  expect(triage(report)).toMatchObject({ type: "Monthly", needsReview: true, printedStatus: "NOT OK", autoFiled: true });
+});
+
+it("keeps IEC Acceptance with the same test labels in Other", () => {
+  const report = parseSiemensPages([
+    { page: 1, lines: ["Product Name SOMATOM Definition Flash", "2026-08-03 09:41:43", "Quality IEC Acceptance"] },
+    { page: 2, lines: ["1. Quality IEC Acceptance Lightmarker OK........3", "2. Quality IEC Acceptance MTF NOT OK........4"] },
+  ], "test-acceptance.pdf", 20);
+  expect(triage(report)).toMatchObject({ type: "Other", needsReview: true, printedStatus: "NOT OK" });
 });

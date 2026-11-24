@@ -1,3 +1,4 @@
+import { filingLabel } from "./qa-triage";
 import { log } from "./qa-logger";
 import { desktop } from "./qa-desktop";
 import { ALL_SCANNERS, type Report, type ReportType } from "./qa-data";
@@ -85,7 +86,7 @@ export function buildCsv(reports: Report[]): string {
   const rows = reports.map((r) => {
     const s = ALL_SCANNERS.find((x) => x.id === r.scanner);
     return [s?.name ?? r.scanner, s?.model ?? "", r.date, r.time, tidyFileName(r), r.fileName, folderParts(r).join("/"),
-      r.needsReview ? "Not filed" : `Filed as ${r.type}`, r.suggested, r.printedStatus ?? "Not available",
+      filingLabel(r), r.suggested, r.printedStatus ?? "Not available",
       r.measurements.filter((m) => m.value < m.lower || m.value > m.upper).length];
   });
   return [head, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
@@ -94,7 +95,7 @@ export function buildCsv(reports: Report[]): string {
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c);
 
 export function buildSummaryHtml(reports: Report[], title: string): string {
-  const rows = reports.map((r) => `<tr><td>${esc(ALL_SCANNERS.find((s) => s.id === r.scanner)?.name ?? r.scanner)}</td><td>${r.date} ${r.time}</td><td>${esc(r.fileName)}</td><td>${r.needsReview ? "Not filed" : "Filed as " + r.type}</td><td class="${r.printedStatus === "NOT OK" ? "bad" : ""}">${r.printedStatus ?? "Not available"}</td></tr>`).join("");
+  const rows = reports.map((r) => `<tr><td>${esc(ALL_SCANNERS.find((s) => s.id === r.scanner)?.name ?? r.scanner)}</td><td>${r.date} ${r.time}</td><td>${esc(r.fileName)}</td><td>${filingLabel(r)}</td><td class="${r.printedStatus === "NOT OK" ? "bad" : ""}">${r.printedStatus ?? "Not available"}</td></tr>`).join("");
   const notOk = reports.filter((r) => r.printedStatus === "NOT OK").length;
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font:14px system-ui;margin:24px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:4px 8px;text-align:left}.bad{color:#b00;font-weight:600}</style></head><body><h1>${esc(title)}</h1><p>${reports.length} reports · ${notOk} with printed NOT OK. Filing labels are organisation only, not clinical sign-off.</p><table><thead><tr><th>Scanner</th><th>Date</th><th>File</th><th>Filing</th><th>Printed result</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
 }

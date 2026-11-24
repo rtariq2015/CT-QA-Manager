@@ -44,7 +44,10 @@ function Monthly() {
       return { ...c, src, flagged: ms.filter(isOutOfLimit).length, page: ms[0]?.page };
     });
   }, [reports, scanner, month]);
-  const unfiled = reports.filter((r) => r.scanner === scanner && r.date.startsWith(month) && r.needsReview && r.suggested === "Monthly").length;
+  const monthlyReview = reports.filter((r) =>
+    r.scanner === scanner && r.date.startsWith(month) && r.needsReview && (r.type === "Monthly" || r.suggested === "Monthly"));
+  const unfiled = monthlyReview.filter((r) => r.type !== "Monthly").length;
+  const filedForReview = monthlyReview.length - unfiled;
   const done = items.filter((i) => i.src).length;
 
   const last = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
@@ -86,13 +89,15 @@ function Monthly() {
         ))}
       </div>
       {unfiled > 0 && <p className="mb-4 rounded-md border border-warn/50 bg-warn/15 px-4 py-3">{unfiled} likely Monthly report{unfiled > 1 ? "s" : ""} for this month still need filing in Review. Their tests aren't counted yet.</p>}
+      {filedForReview > 0 && <p className="mb-4 rounded-md border border-warn/50 bg-warn/15 px-4 py-3">{filedForReview} filed Monthly report{filedForReview > 1 ? "s still need" : " still needs"} review.</p>}
       <ul className="divide-y rounded-lg border bg-card">
         {items.map((i) => (
           <li key={i.metric} className="flex flex-wrap items-center gap-4 px-5 py-4">
-            {i.src ? <CheckCircle2 className="size-5 text-ok" /> : <CircleDashed className="size-5 text-muted-foreground" />}
+            {i.src && !i.src.needsReview && i.src.printedStatus !== "NOT OK" ? <CheckCircle2 className="size-5 text-ok" /> : <CircleDashed className="size-5 text-muted-foreground" />}
             <span className="flex-1 text-lg">{i.label}</span>
             {i.src ? (
               <>
+                {i.src.needsReview && <Pill tone="warn">Review needed</Pill>}
                 {i.flagged > 0 && <Pill tone="bad">{i.flagged} out of limit</Pill>}
                 <span className="font-mono text-sm text-muted-foreground">{i.src.fileName} · p.{i.page}</span>
               </>

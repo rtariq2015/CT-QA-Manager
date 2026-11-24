@@ -16,7 +16,8 @@ export const getRouter = () => {
     scrollRestoration: true,
     // Lets Query own freshness; set caching defaults on the QueryClient, not the router.
     defaultPreloadStaleTime: 0,
-    ...(DESKTOP ? { history: createHashHistory() } : {}),
+    // TanStack uses this synthetic origin for URL comparisons. The desktop address stays ctqa://app/.
+    ...(DESKTOP ? { history: createHashHistory(), origin: "http://localhost" } : {}),
   });
 
   return router;

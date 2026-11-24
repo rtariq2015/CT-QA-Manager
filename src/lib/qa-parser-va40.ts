@@ -1,3 +1,4 @@
+import { printedProgram } from "./qa-filing-evidence";
 import { PdfReadError } from "./qa-read-error";
 import { distinctMeasurements, validReportTimestamp } from "./qa-parser-validation";
 import { type Measurement, type MetricId, type Report } from "./qa-data";
@@ -151,7 +152,7 @@ export function parseVa40Pages(pages: PdfTextPage[], filename: string, sizeKb: n
   const suggested = /Acceptance/.test(all.slice(0, 400)) ? "Other" : daily ? "Daily" : sections.length > 2 && /IEC Constancy/.test(all.slice(0, 400)) ? "Monthly" : "Other";
   return {
     id: `local-${filename}-${stamp.date}-${stamp.time}`, scanner: "xcite", date: stamp.date, time: stamp.time, fileName: filename, sizeKb,
-    type: "Other", suggested, confidence: "uncertain", needsReview: true, measurements: unique, pages: pages.length, source: "uploaded",
+    type: "Other", suggested, program: printedProgram(all), confidence: "uncertain", needsReview: true, measurements: unique, pages: pages.length, source: "uploaded",
     printedStatus, printedSections: sections, software: /Software\s+Version\s+(\S+)/.exec(all)?.[1] ?? "Not available",
     extractionIncomplete,
     extractionNotes: ["Partial extraction: tables with printed limits only. Check the original PDF for other tests.", ...(sections.length ? [] : ["Printed summary not available; no QA result inferred."]), ...(unique.length ? [] : ["No supported measurement tables found."]), ...(extractionIncomplete ? ["Some rows do not have readable measurements and matching printed limits."] : [])],

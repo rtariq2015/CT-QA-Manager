@@ -1,3 +1,4 @@
+import { printedProgram } from "./qa-filing-evidence";
 import { PdfReadError } from "./qa-read-error";
 import { distinctMeasurements, validReportTimestamp } from "./qa-parser-validation";
 import { type Measurement, type MetricId, type Report, type ScannerId } from "./qa-data";
@@ -130,5 +131,5 @@ export function parseSiemensPages(pages: PdfTextPage[], filename: string, sizeKb
     && sections.some(s => s.label === "Noise")
     && sections.some(s => s.label === "Homogeneity" || s.label === "Homogeneity / Water");
   const suggested = /Quality\s+(?:IEC\s+)?Acceptance/.test(all) ? "Other" : /Quality\s+Daily/.test(all) || dailyConstancy ? "Daily" : sections.length > 2 ? "Monthly" : "Other";
-  return { id: `local-${filename}-${stamp[1]}-${stamp[2]}`, scanner, date: stamp[1], time: stamp[2], fileName: filename, sizeKb, type: "Other", suggested, confidence: "uncertain", needsReview: true, measurements: unique, pages: pages.length, source: "uploaded", printedStatus, printedSections: sections, software: /Software Version\s+([^\n]+)/.exec(all)?.[1]?.trim() ?? "Not available", extractionIncomplete, extractionNotes: ["Partial extraction: slice tables with explicit printed limits only. Check the original PDF for other tests.", ...(sections.length ? [] : ["Printed summary not available; no QA result inferred."]), ...(unique.length ? [] : ["No supported measurement tables found."]), ...(extractionIncomplete ? ["Some rows do not have readable measurements and matching printed limits."] : [])] };
+  return { id: `local-${filename}-${stamp[1]}-${stamp[2]}`, scanner, date: stamp[1], time: stamp[2], fileName: filename, sizeKb, type: "Other", suggested, program: printedProgram(all), confidence: "uncertain", needsReview: true, measurements: unique, pages: pages.length, source: "uploaded", printedStatus, printedSections: sections, software: /Software Version\s+([^\n]+)/.exec(all)?.[1]?.trim() ?? "Not available", extractionIncomplete, extractionNotes: ["Partial extraction: slice tables with explicit printed limits only. Check the original PDF for other tests.", ...(sections.length ? [] : ["Printed summary not available; no QA result inferred."]), ...(unique.length ? [] : ["No supported measurement tables found."]), ...(extractionIncomplete ? ["Some rows do not have readable measurements and matching printed limits."] : [])] };
 }

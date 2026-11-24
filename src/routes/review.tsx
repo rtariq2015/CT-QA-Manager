@@ -1,5 +1,4 @@
 import { FailedImports } from "@/components/qa/FailedImports";
-import { tidyFileName } from "@/lib/qa-library";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { createFileRoute } from "@tanstack/react-router";
@@ -10,7 +9,7 @@ import { SCANNERS, type ReportType, type ScannerId } from "@/lib/qa-data";
 import { matchingReviewReports, reviewMatchKey } from "@/lib/qa-review-matching";
 import { useQa } from "@/lib/qa-store";
 import { reviewAction, reviewReason } from "@/lib/qa-triage";
-import { PageHeader, Pill, ScannerLabel, fmtDate } from "@/components/qa/ui";
+import { PageHeader, ScannerLabel } from "@/components/qa/ui";
 import { ReportPreview } from "@/components/qa/ReportPreview";
 import { cn } from "@/lib/utils";
 
@@ -33,7 +32,7 @@ const CHOICES: { type: ReportType; key: string }[] = [
 ];
 
 function Review() {
-  const { pending, failedImports, file, fileMatching, undo, filingBusy, lastFiling } = useQa();
+  const { pending, failedImports, file, organizePending, fileMatching, undo, filingBusy, lastFiling } = useQa();
   const [scanner, setScanner] = useState<ScannerId | "all">("all");
   const scoped = useMemo(() => scanner === "all" ? pending : pending.filter((r) => r.scanner === scanner), [pending, scanner]);
   const counts = useMemo(() => {
@@ -64,6 +63,14 @@ function Review() {
       </select>
     </label>
   );
+
+  const eligible = scoped.filter((report) => report.program === undefined && report.originalUrl);
+  const organize = async () => {
+    const { filed, needsReview, errors } = await organizePending(eligible.map(({ id }) => id));
+    const text = `${filed} organized · ${needsReview} still need review${errors ? ` · ${errors} PDFs could not be checked` : ""}`;
+    if (errors) toast.warning(text);
+    else toast.success(text);
+  };
 
   const undoRef = useRef(undo);
   useEffect(() => { undoRef.current = undo; }, [undo]);
@@ -154,49 +161,57 @@ function Review() {
 
   return (
     <div className="mx-auto max-w-7xl">
-      <PageHeader eyebrow={`Review · ${scoped.length} left`} title="Needs attention">
-        <p className="text-sm text-muted-foreground">Clean Daily and Monthly reports are filed automatically. Reports with unreadable results or other exceptions appear here for review.</p>
-        {lastFiling && <Button variant="outline" disabled={filingBusy} onClick={() => void undoFiling()}><Undo2 />{lastFiling.batchId ? "Undo last group" : "Undo last filing"}</Button>}
+      <PageHeader eyebrow="Review" title="QA review">
+        {lastFiling && <Button variant="outline" size="sm" disabled={filingBusy}
+          onClick={() => void undoFiling()}><Undo2 />{lastFiling.batchId ? "Undo last group" : "Undo last filing"}</Button>}
       </PageHeader>
-      {selection}
-      {filter}
-      <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
-        <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-          <div className="rounded-lg border bg-card p-5">
-            <ScannerLabel id={current.scanner} />
-            <p className="mt-2 break-all font-mono text-sm">{tidyFileName(current)}</p>
-            <p className="break-all font-mono text-xs text-muted-foreground">Original: {current.fileName}</p>
-            <p className="text-muted-foreground">{fmtDate(current.date)} · {current.time} · {current.sizeKb} KB · {current.pages} pages</p>
-            {reviewReason(current) && <p className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm font-medium"><span className="block">Why: {reviewReason(current)}</span><span className="mt-1 block font-normal">What to do: {reviewAction(current)}</span></p>}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="text-sm text-muted-foreground">Suggested:</span>
-              <Pill tone={current.confidence === "uncertain" ? "warn" : "muted"}>{current.suggested} · {current.confidence}</Pill>
-            </div>
-            <p className="mt-4 text-sm font-medium">{filingBusy ? "Updating QA Library…" : "File as"}</p>
-            <div className="mt-2 grid gap-2">
-              {CHOICES.map((c) => (
-                <Button variant="outline" key={c.type} disabled={filingBusy} onClick={() => void doFile(c.type)}
-                  className={cn("flex items-center justify-between rounded-md border px-4 py-3 text-left text-lg font-medium transition-colors hover:bg-accent",
-                    c.type === current.suggested && "border-primary bg-primary/8")}>
-                  {c.type}<Kbd>{c.key}</Kbd>
-                </Button>
-              ))}
-            </div>
-            {matching.length > 1 && (
-              <Button variant="outline" className="mt-3 w-full" disabled={filingBusy} onClick={showMatches}>Review {matching.length} matching reports</Button>
-            )}
-            <p className="mt-3 text-xs text-muted-foreground">Filing sorts the document. It is not clinical sign-off.</p>
-          </div>
-          <div className="max-h-72 overflow-y-auto rounded-lg border bg-card" role="list" aria-label="Queue">
+      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-4">
+        {selection}
+        <div className="flex flex-wrap items-baseline gap-x-3">
+          {filter}
+          {eligible.length > 0 && <Button variant="outline" size="sm" disabled={filingBusy} onClick={() => void organize()}>
+            Organize Daily / Monthly
+          </Button>}
+        </div>
+      </div>
+      <div className="grid items-start gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <section className="overflow-hidden rounded-lg border bg-card lg:sticky lg:top-24">
+          <h2 className="border-b px-3 py-2 text-sm font-semibold">Queue <span className="text-muted-foreground">· {scoped.length}</span></h2>
+          <div className="max-h-[55vh] overflow-y-auto" role="list" aria-label="Queue">
             {scoped.map((r) => (
-              <Button variant="outline" key={r.id} role="listitem" onClick={() => setCurrentId(r.id)}
-                className={cn("flex w-full items-center justify-between gap-2 border-b px-4 py-2 text-left text-sm last:border-0 hover:bg-muted", r.id === current.id && "bg-accent")}>
-                <ScannerLabel id={r.scanner} /><span className="font-mono text-muted-foreground">{r.date.slice(5)}</span>
+              <Button variant="ghost" key={r.id} role="listitem" onClick={() => setCurrentId(r.id)}
+                className={cn("flex h-auto w-full flex-col items-start gap-0.5 rounded-none border-b px-3 py-2 text-left last:border-0", r.id === current.id && "bg-accent")}>
+                <span className="flex w-full items-center justify-between gap-1 text-sm">
+                  <ScannerLabel id={r.scanner} /><span className="shrink-0 text-xs text-muted-foreground">{r.date.slice(5)}</span>
+                </span>
+                <span className={cn("text-xs", r.printedStatus === "NOT OK" ? "text-destructive" : "text-muted-foreground")}>
+                  {r.autoFiled ? `${r.type} · ` : ""}{r.printedStatus === "NOT OK" ? "Printed NOT OK" : r.autoFiled ? "Review needed" : "Filing pending"}
+                </span>
               </Button>
             ))}
           </div>
+        </section>
+        <div className="min-w-0 space-y-4">
+          <section className="space-y-2 rounded-lg border bg-card p-3" aria-label="Review actions">
+            <p className={cn("text-sm font-semibold", current.printedStatus === "NOT OK" && "text-destructive")}>
+              {reviewReason(current) ?? "Check this report"}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              {current.autoFiled && <Button size="sm" disabled={filingBusy} onClick={() => void doFile(current.type)}>Acknowledge</Button>}
+              {CHOICES.map(({ type, key }) => (
+                <Button variant="outline" size="sm" key={type} disabled={filingBusy} onClick={() => void doFile(type)}>
+                  {type}<Kbd>{key}</Kbd>
+                </Button>
+              ))}
+              {matching.length > 1 && <Button variant="outline" size="sm" disabled={filingBusy} onClick={showMatches}>Review {matching.length} matching reports</Button>}
+            </div>
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer">Review guidance</summary>
+              <p className="mt-1">{reviewAction(current)}</p>
+            </details>
+          </section>
+          <ReportPreview key={current.id} report={current} initialView={current.printedStatus === "Not available" || !current.printedStatus ? "pdf" : "readings"} />
         </div>
-        <div className="min-w-0"><ReportPreview key={current.id} report={current} initialView={current.printedStatus === "Not available" || !current.printedStatus ? "pdf" : "readings"} /></div>
       </div>
       <Dialog open={Boolean(batch)} onOpenChange={(open) => { if (!open && !filingBusy) setBatch(undefined); }}>
         {batch && <DialogContent>
