@@ -31,7 +31,7 @@ Click **Save** in Windows Settings to write **Settings.json** beside the executa
 | Workspace | What you can do |
 | --- | --- |
 | **Today** | See one row per scanner with Daily receipt, the printed result, and Monthly progress. Open the report or Review queue directly. |
-| **Reports** | Search the library or switch to Calendar. Aborted tests and out-of-limit readings are highlighted on the report date. |
+| **Reports** | Open the calendar first, switch to List, or search the library. Aborted tests and out-of-limit readings are highlighted on the report date. |
 | **Review** | See QA exceptions first, acknowledge a filed report, change its filing, or open an import issue. |
 | **Monthly and Trends** | See reported Monthly test results and open their original PDF pages. Chart supported measurements against their printed limits. |
 | **Folders and Exports** | Browse the organized library and export PDFs with a CSV and HTML summary. |

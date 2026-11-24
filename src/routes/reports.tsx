@@ -23,7 +23,7 @@ type ReportSearch = {
   date?: string | undefined;
   month?: string | undefined;
   result?: typeof RESULT_FILTER[number] | undefined;
-  view?: "calendar" | undefined;
+  view?: "calendar" | "list" | undefined;
 };
 
 export const Route = createFileRoute("/reports")({
@@ -33,7 +33,7 @@ export const Route = createFileRoute("/reports")({
     date: dateFilter(search["date"]),
     month: monthFilter(search["month"]),
     result: RESULT_FILTER.find((result) => result === search["result"]),
-    view: search["view"] === "calendar" ? "calendar" : undefined,
+    view: search["view"] === "calendar" || search["view"] === "list" ? search["view"] : undefined,
   }),
   head: () => ({
     meta: [
@@ -53,6 +53,7 @@ const ROW = 52;
 function Reports() {
   const { reports, addReport, addFailedImport, today } = useQa();
   const { scanner, type, date, month, result: resultFilter, view } = Route.useSearch();
+  const showCalendar = (view ?? (date || type || resultFilter ? "list" : "calendar")) === "calendar";
   const navigate = Route.useNavigate();
   const linkedId = useLocation({ select: ({ state }) => state.qaReportId });
   const linkedPage = useLocation({ select: ({ state }) => state.qaReportPage });
@@ -126,15 +127,15 @@ function Reports() {
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <label className="relative min-w-48 flex-1">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input value={q} onChange={(e) => { setQ(e.target.value); setScrollTop(0); box.current?.scrollTo(0, 0); if (view) setFilters({ view: undefined }); }} placeholder="Search name, date, test, or result…"
+          <input value={q} onChange={(e) => { setQ(e.target.value); setScrollTop(0); box.current?.scrollTo(0, 0); if (showCalendar && e.target.value.trim()) setFilters({ view: "list" }); }} placeholder="Search name, date, test, or result…"
             className="h-11 w-full rounded-md border bg-card pl-9 pr-3 outline-none focus:ring-2 focus:ring-ring" aria-label="Search reports" />
         </label>
         <div className="flex rounded-md border bg-card p-0.5" aria-label="Report view">
-          <Button size="sm" variant={!view ? "secondary" : "ghost"} aria-pressed={!view} onClick={() => setFilters({ view: undefined })}><List />List</Button>
-          <Button size="sm" variant={view ? "secondary" : "ghost"} aria-pressed={Boolean(view)} onClick={() => setFilters({ view: "calendar" })}><CalendarDays />Calendar</Button>
+          <Button size="sm" variant={showCalendar ? "secondary" : "ghost"} aria-pressed={showCalendar} onClick={() => setFilters({ view: "calendar" })}><CalendarDays />Calendar</Button>
+          <Button size="sm" variant={showCalendar ? "ghost" : "secondary"} aria-pressed={!showCalendar} onClick={() => setFilters({ view: "list" })}><List />List</Button>
         </div>
       </div>
-      {view === "calendar" ? (
+      {showCalendar ? (
         <Calendar reports={reports} scanner={scanner ?? "flash"} month={month ?? date?.slice(0, 7) ?? today.slice(0, 7)}
           onScanner={(value) => setFilters({ scanner: value })} onMonth={(value) => setFilters({ month: value, date: undefined })} onReport={openReport} />
       ) : <>
