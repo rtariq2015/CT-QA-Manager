@@ -84,6 +84,9 @@ function createCatalog(libraryRoot) {
       const relative = path.relative(libraryRoot(), file);
       return [...load().values()].some((item) => item.report.id !== reportId && item.path === relative);
     },
+    fileForReport(reportId) {
+      return typeof reportId === "string" ? localPdf(load().get(hash(reportId))) : undefined;
+    },
     pdf(key) { return validKey.test(key) ? localPdf(load().get(key)) : undefined; },
     reports(url) {
       return [...load()].map(([key, item]) => ({

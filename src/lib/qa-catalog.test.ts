@@ -10,6 +10,7 @@ interface Catalog {
   save(input: RecordInput): void;
   hasSource(source: string): boolean;
   reports(url: string): Report[];
+  fileForReport(reportId: string): string | undefined;
   pdf(key: string): string | undefined;
 }
 const { createCatalog, sourceFingerprint } = createRequire(import.meta.url)("../../electron/catalog.cjs") as {
@@ -39,6 +40,7 @@ it("reopens parsed reports, tracks moved originals and invalidates missing or ch
     expect(saved).toMatchObject({ id: report.id, needsReview: true, originalUrl: expect.stringMatching(/^ctqa:/) });
     const key = saved.originalUrl!.split("/").at(-1)!.slice(0, -4);
     expect(reopened.pdf(key)).toBe(target);
+    expect(reopened.fileForReport(report.id)).toBe(target);
 
     const moved = join(folder, "moved.pdf");
     writeFileSync(moved, bytes);

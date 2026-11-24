@@ -301,6 +301,20 @@ handleAppMessage("ctqa:saveCopy", (_e, rel, data, previous = [], metadata) => {
       }
       return undefined;
     };
+    const keepExistingCopy = (file) => {
+      const catalogError = remember(file);
+      if (!catalogError) removePreviousCopies(alternatives, buf, metadata?.reportId);
+      return { ok: true, path: file, existed: true, catalogError };
+    };
+    const sameBytes = (file) => {
+      const stat = fs.statSync(file);
+      return stat.isFile() && stat.size === buf.length && fs.readFileSync(file).equals(buf);
+    };
+    // A cataloged copy can have a suffix even when its base name is available again.
+    const saved = catalog.fileForReport(metadata?.reportId);
+    if (saved && !path.relative(fs.realpathSync(dir), path.dirname(saved)) && sameBytes(saved)) {
+      return keepExistingCopy(saved);
+    }
     let target = destination;
     for (let suffix = 2; ; suffix++) {
       try {
@@ -309,12 +323,7 @@ handleAppMessage("ctqa:saveCopy", (_e, rel, data, previous = [], metadata) => {
       } catch (err) {
         if (err.code !== "EEXIST") throw err;
       }
-      const existing = fs.statSync(target);
-      if (existing.isFile() && existing.size === buf.length && fs.readFileSync(target).equals(buf)) {
-        const catalogError = remember(target);
-        if (!catalogError) removePreviousCopies(alternatives, buf, metadata?.reportId);
-        return { ok: true, path: target, existed: true, catalogError };
-      }
+      if (sameBytes(target)) return keepExistingCopy(target);
       target = path.join(dir, `${stem}_${suffix}${ext}`);
     }
     const catalogError = remember(target);
