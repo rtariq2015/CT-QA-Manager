@@ -61,6 +61,18 @@ describe("SOMATOM X.cite (VA40A) reports", () => {
       { metric: "mtf10", value: 24.5, baseline: 24.7 },
     ]);
   });
+  it("identifies both reference and routine results from X.cite test headings", () => {
+    const limits = "Tolerance: 10 … 20 Tolerance: 20 … 30";
+    const rows = ["Slice 50% [lp/cm] 10% [lp/cm]", limits, "6 12.9 12.2 24.5 24.7 In Tol."];
+    const r = parseSiemensPages([cover, dailySummary, { page: 4, lines: [
+      "2 Reference MTF (IEC Constancy)", "2.1.1 Typical Body Mode", ...rows,
+      "3 MTF (IEC Constancy)", "3.1.1 Typical Body Mode", ...rows,
+    ] }], "mixed.pdf", 10);
+    expect(r.measurements.map(({ metric, referenceTest }) => ({ metric, referenceTest }))).toEqual([
+      { metric: "mtf50", referenceTest: true }, { metric: "mtf10", referenceTest: true },
+      { metric: "mtf50", referenceTest: false }, { metric: "mtf10", referenceTest: false },
+    ]);
+  });
 });
 
 it("keeps a printed exception from a summary explicitly marked continued", () => {

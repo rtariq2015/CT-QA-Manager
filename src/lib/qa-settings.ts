@@ -110,6 +110,29 @@ export function normalizeConfig(raw: unknown): Config {
   return { sources, dueDay, days, sync };
 }
 
+/** A backup must contain usable settings before the restore can change any saved data. */
+export function parseBackupSettings(raw: unknown): Config {
+  const config = raw as Partial<Config> | null;
+  if (!config || typeof config !== "object" || !Array.isArray(config.sources)) {
+    throw new Error("The backup settings have no scanner folder list.");
+  }
+  for (const entry of config.sources) {
+    const source = entry as Partial<Source> | null;
+    if (!source || typeof source !== "object" || typeof source.name !== "string" || !source.name.trim() ||
+        typeof source.path !== "string" || (source.kind !== undefined && !KINDS.includes(source.kind)) ||
+        (source.user !== undefined && typeof source.user !== "string")) {
+      throw new Error("The backup contains an invalid scanner folder. No settings were restored.");
+    }
+  }
+  const { dueDay, days, sync } = config;
+  if (typeof dueDay !== "number" || !Number.isInteger(dueDay) || dueDay < 1 || dueDay > 28 ||
+      typeof days !== "string" || !DAYS.includes(days) ||
+      (typeof sync !== "string" && typeof sync !== "number") || !SYNC.includes(String(sync))) {
+    throw new Error("The backup contains an invalid QA schedule. No settings were restored.");
+  }
+  return normalizeConfig({ sources: config.sources, dueDay, days, sync: String(sync) });
+}
+
 /** Read Settings.json, including files exported by earlier versions. */
 export function parseSettingsJson(text: string): Config {
   const raw = JSON.parse(text.trim()) as Record<string, unknown> | null;

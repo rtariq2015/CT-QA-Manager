@@ -142,8 +142,8 @@ function Settings() {
     if (!f) return;
     try {
       const b = parseBackup(await f.text());
-      if (b.settings && typeof b.settings === "object" && Array.isArray((b.settings as Config).sources)) {
-        const next = normalizeConfig(b.settings);
+      if (b.settings) {
+        const next = b.settings;
         await persist(next);
         setCfg(next);
         setSavedNames(next.sources.map((s) => s.name));

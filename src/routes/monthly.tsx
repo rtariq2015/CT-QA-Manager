@@ -137,7 +137,7 @@ function Monthly() {
             {item.history.length > 0 && <details className="mt-1 pl-6 text-xs text-muted-foreground">
               <summary className="w-fit cursor-pointer hover:text-foreground">Test history ({item.history.length})</summary>
               <ul className="mt-1 space-y-2 border-l pl-3">
-                {item.history.map((run) => <li key={run.report.id} className="flex flex-wrap items-center gap-2 py-1">
+                {item.history.map((run) => <li key={`${run.report.id}:${run.reference}`} className="flex flex-wrap items-center gap-2 py-1">
                   <Pill tone={MONTHLY_RESULTS[run.status].tone}>{run.reference ? "Reference · " : ""}{MONTHLY_RESULTS[run.status].label}</Pill>
                   <Link to="/reports" search={{ scanner, month, type: "Monthly" }} state={{ qaReportId: run.report.id, qaReportPage: run.page }}
                     className="text-primary underline-offset-2 hover:underline" aria-label={`Open ${item.label} history from ${fmtDate(run.report.date)} at ${run.report.time}`}>

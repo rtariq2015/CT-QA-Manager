@@ -1,4 +1,6 @@
-import { isOutOfLimit, MONTHLY_CHECKLIST, type MetricId, type Report, type ScannerId } from "./qa-data";
+import { isOutOfLimit, MONTHLY_CHECKLIST, type Measurement, type MetricId, type Report, type ScannerId } from "./qa-data";
+import type { PrintedSection } from "./qa-parser";
+import { isReferenceTest, normalizeTestLabel } from "./qa-parser-validation";
 import { QA_ALERTS } from "./qa-report-status";
 
 const monthlyTestNames: Partial<Record<MetricId, RegExp>> = {
@@ -16,6 +18,7 @@ export const MONTHLY_RESULTS = {
   "not-ok": QA_ALERTS["not-ok"],
   "out-of-limit": QA_ALERTS["out-of-limit"],
   aborted: QA_ALERTS.aborted,
+  unassigned: { label: "Reading needs review", tone: "warn", rank: 1 },
   unavailable: { label: "Result unavailable", tone: "warn", rank: 1 },
   readings: { label: "Readings only", tone: "muted", rank: 0 },
   ok: { label: "Printed OK", tone: "ok", rank: -1 },
@@ -24,20 +27,29 @@ export const MONTHLY_RESULTS = {
 type ResultStatus = keyof typeof MONTHLY_RESULTS;
 type MonthlyRun = { report: Report; page: number; status: ResultStatus; reference: boolean; recorded: boolean; outside: number };
 
-const isReference = (label: string) => /^Reference\s+/i.test(label.trim());
 const reportTime = ({ date, time }: Report) => `${date} ${time.padEnd(8, ":00")}`;
 
 export function monthlyResultAlert(status: ResultStatus) {
-  return status === "not-ok" || status === "out-of-limit" || status === "aborted";
+  return status === "not-ok" || status === "out-of-limit" || status === "aborted" || status === "unassigned";
 }
 
-function testRun(report: Report, metric: MetricId): MonthlyRun | undefined {
-  const measurements = report.measurements.filter((reading) => reading.metric === metric || (metric === "mtf50" && reading.metric === "mtf10"));
-  const matches = report.printedSections?.filter(({ label }) => monthlyTestNames[metric]?.test(label.trim().replace(/^Reference\s+/i, ""))) ?? [];
-  const routine = matches.filter(({ label }) => !isReference(label));
-  const sections = routine.length ? routine : matches;
-  const allSections = report.printedSections ?? [];
-  const reference = matches.length ? !routine.length : allSections.length > 0 && allSections.every(({ label }) => isReference(label));
+function metricReadings(report: Report, metric: MetricId) {
+  return report.measurements.filter((reading) => reading.metric === metric || (metric === "mtf50" && reading.metric === "mtf10"));
+}
+
+function testSections(report: Report, metric: MetricId) {
+  return report.printedSections?.filter(({ label }) => monthlyTestNames[metric]?.test(normalizeTestLabel(label).replace(/^Reference /i, ""))) ?? [];
+}
+
+export function hasUnassignedMonthlyReadings(report: Report) {
+  return report.type === "Monthly" && MONTHLY_CHECKLIST.some(({ metric }) => {
+    const sections = testSections(report, metric);
+    return sections.some(({ label }) => isReferenceTest(label)) && sections.some(({ label }) => !isReferenceTest(label)) &&
+      metricReadings(report, metric).some(({ referenceTest }) => referenceTest === undefined);
+  });
+}
+
+function testRun(report: Report, sections: PrintedSection[], measurements: Measurement[], reference: boolean, unassigned?: Measurement): MonthlyRun | undefined {
   const failed = sections.find(({ status }) => status === "NOT OK");
   const aborted = sections.find(({ status }) => status === "Aborted");
   const passed = sections.find(({ status }) => status === "OK");
@@ -45,18 +57,37 @@ function testRun(report: Report, metric: MetricId): MonthlyRun | undefined {
   const reading = !aborted && report.printedStatus !== "Aborted" ? measurements[0] : undefined;
   const unreadable = sections.find(({ status }) => status === "Not available");
   // Agreement with the printed limits matters even when this test's summary prints OK.
-  const evidence = failed ?? aborted ?? outside[0] ?? passed ?? reading ?? unreadable;
+  const evidence = failed ?? aborted ?? outside[0] ?? unassigned ?? passed ?? reading ?? unreadable;
   if (!evidence) return undefined;
-  const status = failed ? "not-ok" : aborted ? "aborted" : outside.length ? "out-of-limit" : passed ? "ok" : reading ? "readings" : "unavailable";
+  const status = failed ? "not-ok" : aborted ? "aborted" : outside.length ? "out-of-limit" : unassigned ? "unassigned" : passed ? "ok" : reading ? "readings" : "unavailable";
   return { report, page: evidence.page, status, reference, recorded: Boolean(failed || passed || reading), outside: outside.length };
+}
+
+function testRuns(report: Report, metric: MetricId) {
+  const measurements = metricReadings(report, metric);
+  const sections = testSections(report, metric);
+  const routineSections = sections.filter(({ label }) => !isReferenceTest(label));
+  const referenceSections = sections.filter(({ label }) => isReferenceTest(label));
+  const referenceOnlyReport = Boolean(report.printedSections?.length && report.printedSections.every(({ label }) => isReferenceTest(label)));
+  const hasReference = Boolean(referenceSections.length || measurements.some(({ referenceTest }) => referenceTest === true) || referenceOnlyReport);
+  const hasRoutine = Boolean(routineSections.length || measurements.some(({ referenceTest }) => referenceTest === false));
+  const routineReadings: Measurement[] = [];
+  const referenceReadings: Measurement[] = [];
+  let unassigned: Measurement | undefined;
+  for (const measurement of measurements) {
+    // Older readings can be assigned only when the report identifies a single kind of run for this test.
+    const reference = measurement.referenceTest ?? (hasReference && hasRoutine ? undefined : hasReference);
+    if (reference === true) referenceReadings.push(measurement);
+    else if (reference === false) routineReadings.push(measurement);
+    else if (!unassigned && isOutOfLimit(measurement)) unassigned = measurement;
+  }
+  return [testRun(report, routineSections, routineReadings, false, unassigned), testRun(report, referenceSections, referenceReadings, true)]
+    .filter((run): run is MonthlyRun => run !== undefined);
 }
 
 export function monthlyChecklistRows(reports: Report[]) {
   return MONTHLY_CHECKLIST.map(({ metric, label }) => {
-    const runs = reports.flatMap((report) => {
-      const result = testRun(report, metric);
-      return result ? [result] : [];
-    }).sort((a, b) => reportTime(b.report).localeCompare(reportTime(a.report)) ||
+    const runs = reports.flatMap((report) => testRuns(report, metric)).sort((a, b) => reportTime(b.report).localeCompare(reportTime(a.report)) ||
       MONTHLY_RESULTS[b.status].rank - MONTHLY_RESULTS[a.status].rank);
     // Establishing a reference is separate evidence from a routine constancy retest.
     const current = runs.find(({ reference }) => !reference) ?? runs[0];

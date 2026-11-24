@@ -4,6 +4,28 @@ const { createHash, randomUUID } = require("crypto");
 
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const validKey = /^[a-f0-9]{64}$/;
+const scanners = new Set(["xcite", "flash", "edge", "drive"]);
+const reportTypes = new Set(["Daily", "Monthly", "Other"]);
+const printedStatuses = new Set(["OK", "NOT OK", "Aborted", "Not available"]);
+
+function validMeasurement(reading) {
+  return reading && typeof reading.metric === "string" && typeof reading.context === "string" && typeof reading.unit === "string" &&
+    Number.isFinite(reading.value) && Number.isFinite(reading.lower) && Number.isFinite(reading.upper) && reading.lower <= reading.upper &&
+    (reading.baseline === null || Number.isFinite(reading.baseline)) && Number.isInteger(reading.page) && reading.page > 0 &&
+    (reading.referenceTest === undefined || typeof reading.referenceTest === "boolean");
+}
+
+function validReport(report) {
+  return report && typeof report.id === "string" && typeof report.fileName === "string" && scanners.has(report.scanner) &&
+    reportTypes.has(report.type) && reportTypes.has(report.suggested) &&
+    typeof report.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(report.date) &&
+    typeof report.time === "string" && /^\d{2}:\d{2}(?::\d{2})?$/.test(report.time) &&
+    Array.isArray(report.measurements) && report.measurements.every(validMeasurement) &&
+    (report.printedStatus === undefined || printedStatuses.has(report.printedStatus)) &&
+    (report.printedSections === undefined || (Array.isArray(report.printedSections) && report.printedSections.every((section) =>
+      section && typeof section.label === "string" && printedStatuses.has(section.status) && Number.isInteger(section.page)))) &&
+    (report.extractionNotes === undefined || (Array.isArray(report.extractionNotes) && report.extractionNotes.every((note) => typeof note === "string")));
+}
 
 function createCatalog(libraryRoot) {
   const directory = () => path.join(libraryRoot(), ".catalog");
@@ -18,8 +40,7 @@ function createCatalog(libraryRoot) {
         if (!entry.isFile() || !validKey.test(entry.name.slice(0, -5)) || !entry.name.endsWith(".json")) continue;
         try {
           const item = JSON.parse(fs.readFileSync(path.join(directory(), entry.name), "utf8"));
-          if (item.version !== 1 || typeof item.report?.id !== "string" ||
-              !Array.isArray(item.report.measurements) || typeof item.path !== "string" ||
+          if (item.version !== 1 || !validReport(item.report) || typeof item.path !== "string" ||
               entry.name !== `${hash(item.report.id)}.json`) continue;
           const key = hash(item.report.id);
           found.set(key, item);
@@ -50,6 +71,7 @@ function createCatalog(libraryRoot) {
     const previous = index.get(key);
     const metadata = report ?? previous?.report;
     if (!metadata || metadata.id !== reportId) return;
+    if (!validReport(metadata)) throw new Error("Invalid report metadata");
     const digest = hash(bytes);
     const sources = previous?.digest === digest ? { ...previous.sources } : {};
     if (typeof source === "string" && /^[a-f0-9]{64}:[a-f0-9]{64}$/.test(source)) {
@@ -91,7 +113,7 @@ function createCatalog(libraryRoot) {
     reports(url) {
       return [...load()].map(([key, item]) => ({
         ...item.report,
-        ...(localPdf(item) ? { originalUrl: `${url}saved-report/${key}.pdf` } : {}),
+        originalUrl: localPdf(item) ? `${url}saved-report/${key}.pdf` : undefined,
       }));
     },
   };

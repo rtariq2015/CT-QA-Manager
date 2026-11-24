@@ -1,15 +1,19 @@
 import type { Report } from "./qa-data";
-import { distinctMeasurements } from "./qa-parser-validation";
+import { hasUnassignedMonthlyReadings } from "./qa-monthly-status";
+import { distinctMeasurements, isReferenceTest, normalizeTestLabel } from "./qa-parser-validation";
 
-export const REPORT_PARSER_REVISION = 1;
+export const REPORT_PARSER_REVISION = 2;
 
-export function needsParserRefresh(report: Report) {
-  if ((report.parserRevision ?? 0) >= REPORT_PARSER_REVISION || !report.originalUrl) return false;
+export function needsParserRefresh(report: Report, manuallyFiled = false) {
+  const revision = report.parserRevision ?? 0;
+  if (revision >= REPORT_PARSER_REVISION || !report.originalUrl) return false;
+  if (hasUnassignedMonthlyReadings(report)) return true;
+  if (revision >= 1 || manuallyFiled) return false;
   if (report.needsReview) return true;
   if (report.scanner === "xcite") return false;
   const sections = report.printedSections ?? [];
   return sections.some(({ label }) => /^(?:Reference\s+)?(?:Lightmarker|External Lightm\.|Sag\.\/Cor\. Lightm\.|Topogram Pos\.|Table Position)$/i.test(label)) ||
-    (report.type === "Monthly" && sections.length > 0 && sections.every(({ label }) => /^Reference\s/i.test(label)));
+    (report.type === "Monthly" && sections.length > 0 && sections.every(({ label }) => isReferenceTest(label)));
 }
 
 export function refreshParsedReport(saved: Report, parsed: Report): Report {
@@ -18,9 +22,10 @@ export function refreshParsedReport(saved: Report, parsed: Report): Report {
     : saved.printedStatus === "OK" || parsed.printedStatus === "OK" ? "OK" : "Not available";
   const printedSections = [...(parsed.printedSections ?? [])];
   for (const section of saved.printedSections ?? []) {
-    const index = printedSections.findIndex(({ label, page }) => label === section.label && page === section.page);
-    if (index < 0) printedSections.push(section);
-    else if (section.status === "NOT OK" || (section.status === "Aborted" && printedSections[index]?.status !== "NOT OK")) printedSections[index] = section;
+    const label = normalizeTestLabel(section.label);
+    const index = printedSections.findIndex((item) => item.label === label && item.page === section.page);
+    if (index < 0) printedSections.push({ ...section, label });
+    else if (section.status === "NOT OK" || (section.status === "Aborted" && printedSections[index]?.status !== "NOT OK")) printedSections[index] = { ...section, label };
   }
   return {
     ...saved,

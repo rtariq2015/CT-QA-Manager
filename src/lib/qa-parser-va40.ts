@@ -1,6 +1,6 @@
 import { printedProgram } from "./qa-filing-evidence";
 import { PdfReadError } from "./qa-read-error";
-import { distinctMeasurements, validReportTimestamp } from "./qa-parser-validation";
+import { distinctMeasurements, isReferenceTest, normalizeTestLabel, validReportTimestamp } from "./qa-parser-validation";
 import { type Measurement, type MetricId, type Report } from "./qa-data";
 import type { PdfTextPage, PrintedSection, PrintedStatus } from "./qa-parser";
 
@@ -23,6 +23,7 @@ function time24(h: string, mi: string, s: string, ap: string) {
 }
 
 function metricFor(test: string): MetricId | undefined {
+  test = test.replace(/^Reference\s+/i, "");
   if (/Sagittal/.test(test)) return "sagcor";
   if (/^Lightmarker/.test(test)) return "lightmarker";
   if (/Topogram/.test(test)) return "topogram";
@@ -47,7 +48,7 @@ export function parseVa40Pages(pages: PdfTextPage[], filename: string, sizeKb: n
     const text = summaryPage.lines.join("\n").replaceAll("\u00a0", " ");
     const row = /([A-Z][A-Za-z/ ]+?)(?:\s*\(IEC Constancy\))?\s+(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)\s*\n?\s*(Not\s+OK|OK|Aborted)\b/gi;
     for (const m of text.matchAll(row)) {
-      const label = (m[1] ?? "").replace(/^(?:Function Start Time Result|Result)\s*/, "").trim();
+      const label = normalizeTestLabel((m[1] ?? "").replace(/^(?:Function Start Time Result|Result)\s*/, ""));
       const result = (m[9] ?? "").toUpperCase();
       sections.push({ label, status: result === "OK" ? "OK" : result === "ABORTED" ? "Aborted" : "NOT OK", page: summaryPage.page });
       if (!stamp) stamp = { date: iso(m[2]!, m[3]!, m[4]!), time: time24(m[5]!, m[6]!, m[7]!, m[8]!) };
@@ -73,7 +74,7 @@ export function parseVa40Pages(pages: PdfTextPage[], filename: string, sizeKb: n
       return;
     }
     const { where, ...rest } = extra;
-    measurements.push({ metric: m, context: `${kv} kV · ${mode || test} · Tube A · ${where}${kernel ? ` · ${kernel}` : ""}`, tube: "A", mode: mode || test, kv, kernel, value, unit: UNIT[m], lower: band[0], upper: band[1], baseline: null, page, limitSource: "printed", ...rest });
+    measurements.push({ metric: m, context: `${kv} kV · ${mode || test} · Tube A · ${where}${kernel ? ` · ${kernel}` : ""}`, tube: "A", mode: mode || test, kv, kernel, value, unit: UNIT[m], lower: band[0], upper: band[1], baseline: null, page, referenceTest: isReferenceTest(test), limitSource: "printed", ...rest });
   };
 
   for (const p of pages) {
