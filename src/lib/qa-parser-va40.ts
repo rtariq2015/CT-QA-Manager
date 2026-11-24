@@ -45,7 +45,7 @@ export function parseVa40Pages(pages: PdfTextPage[], filename: string, sizeKb: n
   let stamp: { date: string; time: string } | undefined;
   const summaryPages = pages.filter(p => p.lines.some(l => /^\s*Summary(?:\s*\(continued\))?\s*$/i.test(l)));
   for (const summaryPage of summaryPages) {
-    const text = summaryPage.lines.join("\n").replaceAll("\u00a0", " ");
+    const text = summaryPage.lines.map(normalizeTestLabel).join("\n");
     const row = /([A-Z][A-Za-z/ ]+?)(?:\s*\(IEC Constancy\))?\s+(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)\s*\n?\s*(Not\s+OK|OK|Aborted)\b/gi;
     for (const m of text.matchAll(row)) {
       const label = normalizeTestLabel((m[1] ?? "").replace(/^(?:Function Start Time Result|Result)\s*/, ""));

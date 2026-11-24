@@ -27,6 +27,10 @@ describe("backup", () => {
     const backup = parseBackup(JSON.stringify({ ...makeBackup({}, null), settings }));
     expect(backup.settings).toEqual({ ...settings, sync: "30" });
   });
+  it("rejects invalid draft settings when creating a backup", () => {
+    const settings = { ...DEFAULT, sources: [{ name: " ", path: "C:\\QA" }] };
+    expect(() => makeBackup({ r1: "Daily" }, settings)).toThrow("invalid scanner folder");
+  });
   it("rejects files that are not backups", () => {
     expect(() => parseBackup("{}")).toThrow();
     expect(() => parseBackup("not json")).toThrow();

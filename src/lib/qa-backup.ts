@@ -5,7 +5,7 @@ export interface QaBackup { kind: "ctqa-backup"; version: 1; createdAt: string; 
 const TYPES: ReportType[] = ["Daily", "Monthly", "Other"];
 
 export function makeBackup(filings: Record<string, ReportType>, settings: Config | null, createdAt = new Date().toISOString()): QaBackup {
-  return { kind: "ctqa-backup", version: 1, createdAt, filings, settings };
+  return { kind: "ctqa-backup", version: 1, createdAt, filings, settings: settings ? parseBackupSettings(settings) : null };
 }
 
 /** Returns a valid backup or throws a readable reason; never partially accepts a file. */

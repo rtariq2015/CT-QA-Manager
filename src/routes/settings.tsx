@@ -137,7 +137,14 @@ function Settings() {
     const a = document.createElement("a"); a.href = url; a.download = "Settings.json"; a.click(); URL.revokeObjectURL(url);
   };
 
-  const backup = () => download(`CTQA-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(makeBackup(qa.overrides, cfg), null, 2));
+  const backup = () => {
+    try {
+      const data = makeBackup(qa.overrides, cfg);
+      download(`CTQA-backup-${data.createdAt.slice(0, 10)}.json`, JSON.stringify(data, null, 2));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not create backup");
+    }
+  };
   const restore = async (f: File | undefined) => {
     if (!f) return;
     try {

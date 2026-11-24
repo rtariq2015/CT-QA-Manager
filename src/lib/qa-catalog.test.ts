@@ -75,7 +75,14 @@ it("opens the healthy catalog entries after damaged metadata is written to disk"
     writeFileSync(goodFile, bytes);
     catalog.save({ reportId: healthy.id, report: healthy, target: goodFile, bytes });
 
-    for (const [id, damage] of Object.entries({ "bad-reading": { measurements: [null] }, "bad-section": { printedSections: [null] } })) {
+    const corruptions = {
+      "bad-reading": { measurements: [null] },
+      "bad-section": { printedSections: [null] },
+      "bad-time": { time: "99:99" },
+      "bad-date": { date: "2026-02-30" },
+      "bad-pages": { pages: 0 },
+    };
+    for (const [id, damage] of Object.entries(corruptions)) {
       const target = join(folder, `${id}.pdf`);
       writeFileSync(target, bytes);
       const source = sourceFingerprint(target, statSync(target));

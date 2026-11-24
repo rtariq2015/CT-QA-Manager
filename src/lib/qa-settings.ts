@@ -121,14 +121,14 @@ export function parseBackupSettings(raw: unknown): Config {
     if (!source || typeof source !== "object" || typeof source.name !== "string" || !source.name.trim() ||
         typeof source.path !== "string" || (source.kind !== undefined && !KINDS.includes(source.kind)) ||
         (source.user !== undefined && typeof source.user !== "string")) {
-      throw new Error("The backup contains an invalid scanner folder. No settings were restored.");
+      throw new Error("The backup contains an invalid scanner folder.");
     }
   }
   const { dueDay, days, sync } = config;
   if (typeof dueDay !== "number" || !Number.isInteger(dueDay) || dueDay < 1 || dueDay > 28 ||
       typeof days !== "string" || !DAYS.includes(days) ||
       (typeof sync !== "string" && typeof sync !== "number") || !SYNC.includes(String(sync))) {
-    throw new Error("The backup contains an invalid QA schedule. No settings were restored.");
+    throw new Error("The backup contains an invalid QA schedule.");
   }
   return normalizeConfig({ sources: config.sources, dueDay, days, sync: String(sync) });
 }

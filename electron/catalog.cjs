@@ -8,6 +8,13 @@ const scanners = new Set(["xcite", "flash", "edge", "drive"]);
 const reportTypes = new Set(["Daily", "Monthly", "Other"]);
 const printedStatuses = new Set(["OK", "NOT OK", "Aborted", "Not available"]);
 
+function validTimestamp(date, time) {
+  if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+      typeof time !== "string" || !/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(time)) return false;
+  const parsed = new Date(`${date}T00:00:00Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date;
+}
+
 function validMeasurement(reading) {
   return reading && typeof reading.metric === "string" && typeof reading.context === "string" && typeof reading.unit === "string" &&
     Number.isFinite(reading.value) && Number.isFinite(reading.lower) && Number.isFinite(reading.upper) && reading.lower <= reading.upper &&
@@ -18,8 +25,7 @@ function validMeasurement(reading) {
 function validReport(report) {
   return report && typeof report.id === "string" && typeof report.fileName === "string" && scanners.has(report.scanner) &&
     reportTypes.has(report.type) && reportTypes.has(report.suggested) &&
-    typeof report.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(report.date) &&
-    typeof report.time === "string" && /^\d{2}:\d{2}(?::\d{2})?$/.test(report.time) &&
+    validTimestamp(report.date, report.time) && Number.isSafeInteger(report.pages) && report.pages > 0 &&
     Array.isArray(report.measurements) && report.measurements.every(validMeasurement) &&
     (report.printedStatus === undefined || printedStatuses.has(report.printedStatus)) &&
     (report.printedSections === undefined || (Array.isArray(report.printedSections) && report.printedSections.every((section) =>
