@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Download, Pause, Play, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -14,23 +14,22 @@ export const useConnection = () => useSyncExternalStore(subscribe, getConnection
 
 /** The scanner folders saved on the Settings page (the defaults until something is saved). */
 export function useConfiguredFolders(): Source[] {
-  const [sources, setSources] = useState<Source[]>(DEFAULT.sources);
-  useEffect(() => {
-    const load = () => {
-      try {
-        const raw = localStorage.getItem(SETTINGS_KEY);
-        if (!raw) return;
-        const parsed = JSON.parse(raw) as { sources?: unknown };
-        if (Array.isArray(parsed.sources)) setSources(normalizeConfig(parsed).sources);
-      } catch { /* nothing saved yet */ }
-    };
-    load();
-    // Settings fires this on Save so renamed scanners show at once (storage events only reach other windows).
-    window.addEventListener("ctqa:settings", load);
-    window.addEventListener("storage", load);
-    return () => { window.removeEventListener("ctqa:settings", load); window.removeEventListener("storage", load); };
-  }, []);
-  return sources;
+  const raw = useSyncExternalStore(subscribeSettings, savedSettings, () => null);
+  return useMemo(() => {
+    try { return raw ? normalizeConfig(JSON.parse(raw)).sources : DEFAULT.sources; }
+    catch { return DEFAULT.sources; }
+  }, [raw]);
+}
+
+function savedSettings() {
+  try { return localStorage.getItem(SETTINGS_KEY); }
+  catch { return null; }
+}
+
+function subscribeSettings(notify: () => void) {
+  window.addEventListener("ctqa:settings", notify);
+  window.addEventListener("storage", notify);
+  return () => { window.removeEventListener("ctqa:settings", notify); window.removeEventListener("storage", notify); };
 }
 
 function save(name: string, text: string, type: string) {

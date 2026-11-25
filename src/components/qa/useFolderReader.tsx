@@ -1,7 +1,7 @@
 import { pdfReadErrorCode } from "@/lib/qa-read-error";
 import { useEffect, useRef, useState } from "react";
 import { desktop, type DesktopBridge } from "@/lib/qa-desktop";
-import { normalizeConfig, parseSettingsJson, SETTINGS_KEY, kindOf } from "@/lib/qa-settings";
+import { hasFolderPath, normalizeConfig, parseSettingsJson, SETTINGS_KEY, kindOf } from "@/lib/qa-settings";
 import { toast } from "sonner";
 import { useQa } from "@/lib/qa-store";
 import { startScan } from "@/lib/qa-scan-log";
@@ -122,7 +122,7 @@ export function useFolderReader(onDone?: () => void, autoConnect = false) {
     try {
       for (const [index, s] of cfg.sources.entries()) {
         if (localStorage.getItem(SETTINGS_KEY) !== saved) break;
-        if (!s.path.trim() || s.path.trim() === "\\\\") continue;
+        if (!hasFolderPath(s)) continue;
         setBusy(`Connecting ${s.name}…`);
         const connectionStart = performance.now();
         const kind = kindOf(s);

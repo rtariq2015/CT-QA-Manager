@@ -174,10 +174,7 @@ function Brand({ small }: { small?: boolean }) {
       <div className="grid size-8 place-items-center rounded-full border-2 border-primary md:border-sidebar-primary">
         <div className="size-2.5 rounded-full bg-primary md:bg-sidebar-primary" />
       </div>
-      <div>
-        <p className="font-semibold leading-tight">CT QA Manager</p>
-        {!small && <p className="text-xs text-sidebar-foreground/60">X.cite · Flash · Edge · Drive</p>}
-      </div>
+      <p className="font-semibold leading-tight">CT QA Manager</p>
     </div>
   );
 }
