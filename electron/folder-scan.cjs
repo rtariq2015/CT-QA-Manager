@@ -52,6 +52,7 @@ async function createFolderScan(dir, hasSource) {
         const name = path.basename(file);
         try {
           const before = await fs.stat(file);
+          if (!before.isFile()) throw new Error("PDF source is not a regular file");
           const fingerprint = sourceFingerprint(file, before);
           if (hasSource(fingerprint)) {
             unchanged++;

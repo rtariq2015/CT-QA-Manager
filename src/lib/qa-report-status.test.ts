@@ -135,6 +135,17 @@ it("keeps reference results separate from the latest routine result", () => {
   expect(coverage.items.find(({ metric }) => metric === "mtf50")).toMatchObject({ current: { report: routine, status: "not-ok" }, history: [{ report: reference, status: "ok", reference: true }] });
 });
 
+it("shows standalone references filed as Other without counting them as a Monthly result", () => {
+  const routine: Report = { ...sample, printedStatus: "NOT OK", printedSections: [{ label: "MTF", status: "NOT OK", page: 2 }] };
+  const reference: Report = { ...sample, id: "other-reference", type: "Other", date: "2026-07-08", printedSections: [{ label: "Reference MTF", status: "OK", page: 3 }] };
+  const coverage = monthlyCoverage([reference, routine], "flash", "2026-07");
+  expect(coverage).toMatchObject({ done: 1, passed: 0, exceptions: 1, filed: [routine] });
+  expect(coverage.items.find(({ metric }) => metric === "mtf50")).toMatchObject({ current: { report: routine, status: "not-ok" }, history: [{ report: reference, status: "ok", reference: true }] });
+  const standalone = monthlyCoverage([reference], "flash", "2026-07");
+  expect(standalone).toMatchObject({ done: 0, passed: 0, exceptions: 0, filed: [] });
+  expect(standalone.items.find(({ metric }) => metric === "mtf50")?.current).toBeUndefined();
+});
+
 it("retains a printed Monthly failure when its test name has extra white space", () => {
   const report: Report = { ...sample, measurements: [{ ...mtf, metric: "slice" }], printedSections: [{ label: "  Slice\u00a0 thickness  ", status: "NOT OK", page: 2 }] };
   const coverage = monthlyCoverage([report], "flash", "2026-07");

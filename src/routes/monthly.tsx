@@ -119,7 +119,7 @@ function Monthly() {
         {items.map((item) => {
           const current = item.current;
           const status = current && MONTHLY_RESULTS[current.status];
-          const reference = current && !current.reference ? item.history.find((run) => run.reference) : undefined;
+          const reference = !current?.reference ? item.history.find((run) => run.reference) : undefined;
           return <li key={item.metric} className="px-4 py-3">
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               {current && monthlyResultAlert(current.status) ? <AlertCircle className={cn("size-4", status?.tone === "bad" ? "text-destructive" : "text-warn")} aria-hidden /> : current ? <FileText className="size-4 text-muted-foreground" aria-hidden /> : <CircleDashed className="size-4 text-muted-foreground" aria-hidden />}
@@ -133,11 +133,11 @@ function Monthly() {
                   {fmtDate(current.report.date)}{item.history.some((run) => run.report.date === current.report.date) ? ` · ${current.report.time.slice(0, 5)}` : ""} <ChevronRight className="size-4" aria-hidden />
                 </Link>
               </>
-              ) : awaiting.has(item.label) ? <Pill tone="warn">Awaiting filing</Pill> : <Pill tone="muted">No result found</Pill>}
+              ) : awaiting.has(item.label) ? <Pill tone="warn">Awaiting filing</Pill> : <Pill tone="muted">{reference ? "No routine result" : "No result found"}</Pill>}
             </div>
             {reference && <div className="mt-2 flex flex-wrap items-center gap-2 pl-6" aria-label="Latest reference result">
               <Pill tone={MONTHLY_RESULTS[reference.status].tone}>Reference · {MONTHLY_RESULTS[reference.status].label}</Pill>
-              <Link to="/reports" search={{ scanner, month, type: "Monthly" }} state={{ qaReportId: reference.report.id, qaReportPage: reference.page }}
+              <Link to="/reports" search={{ scanner, month, type: reference.report.type }} state={{ qaReportId: reference.report.id, qaReportPage: reference.page }}
                 className="flex items-center gap-1 text-sm text-primary hover:underline" aria-label={`Open ${item.label} reference from ${fmtDate(reference.report.date)} at ${reference.report.time}`}>
                 {fmtDate(reference.report.date)} · {reference.report.time.slice(0, 5)} <ChevronRight className="size-4" aria-hidden />
               </Link>
@@ -147,7 +147,7 @@ function Monthly() {
               <ul className="mt-1 space-y-2 border-l pl-3">
                 {item.history.map((run) => <li key={`${run.report.id}:${run.reference}`} className="flex flex-wrap items-center gap-2 py-1">
                   <Pill tone={MONTHLY_RESULTS[run.status].tone}>{run.reference ? "Reference · " : ""}{MONTHLY_RESULTS[run.status].label}</Pill>
-                  <Link to="/reports" search={{ scanner, month, type: "Monthly" }} state={{ qaReportId: run.report.id, qaReportPage: run.page }}
+                  <Link to="/reports" search={{ scanner, month, type: run.report.type }} state={{ qaReportId: run.report.id, qaReportPage: run.page }}
                     className="text-primary underline-offset-2 hover:underline" aria-label={`Open ${item.label} history from ${fmtDate(run.report.date)} at ${run.report.time}`}>
                     {fmtDate(run.report.date)} · {run.report.time.slice(0, 5)}
                   </Link>

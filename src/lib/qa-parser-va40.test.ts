@@ -60,6 +60,15 @@ describe("SOMATOM X.cite (VA40A) reports", () => {
     expect(report).toMatchObject({ printedStatus: "OK", extractionIncomplete: true });
     expect(triage(report)).toMatchObject({ type: "Daily", needsReview: true });
   });
+  it("keeps a readable table complete when a bare page number follows the last row", () => {
+    const page: PdfTextPage = { page: 4, lines: [
+      "2 Noise (IEC Constancy)", "Slice Results for System A [HU] Status", "Tolerance: 6.83 … 9.25",
+      "6 8.21 In Tol.", footer, "4",
+    ] };
+    const report = parseSiemensPages([cover, dailySummary, page], "complete.pdf", 10);
+    expect(report.measurements).toHaveLength(1);
+    expect(report.extractionIncomplete).toBe(false);
+  });
   it("retains the printed MTF reference values", () => {
     const page: PdfTextPage = {
       page: 4,

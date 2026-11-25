@@ -10,7 +10,8 @@ import type { PdfTextPage, PrintedSection, PrintedStatus } from "./qa-parser";
 
 const NUM = "[-+]?(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?(?:[eE][-+]?\\d+)?";
 const RANGE = new RegExp(`(${NUM})\\s*(?:…|\\.\\.\\.)\\s*(${NUM})`, "g");
-const SLICE_ROW = /^\d+(?:\s|$)/;
+// A slice row has cells after its number. A bare number may be a page footer.
+const SLICE_ROW = /^\d+\s+\S/;
 const num = (s: string) => Number(s.replaceAll(",", ""));
 const ranges = (s: string) => [...s.matchAll(RANGE)].map(m => [num(m[1] ?? ""), num(m[2] ?? "")] as [number, number]);
 

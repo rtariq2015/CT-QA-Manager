@@ -120,9 +120,9 @@ function createWindow() {
     }
   });
 
-  win.webContents.on("did-start-navigation", ({ isMainFrame, isSameDocument }) => {
-    if (isMainFrame && !isSameDocument) folderScans.delete(win.webContents);
-  });
+  const clearFolderScan = () => folderScans.delete(win.webContents);
+  win.webContents.on("did-navigate", clearFolderScan);
+  win.webContents.on("render-process-gone", clearFolderScan);
   void win.loadURL(`${APP_URL}#/`);
   return win;
 }
