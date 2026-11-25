@@ -33,6 +33,10 @@ export interface DesktopBridge {
   loginStatus(source: Source): Promise<LoginStatus>;
   saveCopy(rel: string, data: Uint8Array, previous?: string[], metadata?: CatalogMetadata): Promise<{ ok: boolean; path?: string; existed?: boolean; error?: string; catalogError?: string; originalUrl?: string }>;
   openLibrary(): Promise<{ ok: boolean; path: string; error?: string }>;
+  backupDestination(): Promise<string | null>;
+  chooseBackupDestination(): Promise<string | null>;
+  disconnectBackupDestination(): Promise<void>;
+  writeOffsiteBackup(settings?: string): Promise<string>;
   testFolder(s: Source): Promise<{ ok: boolean; error?: string }>;
   startFolderScan(s: Source): Promise<FolderStart>;
   nextFolderBatch(id: string): Promise<FolderBatch>;
