@@ -10,10 +10,28 @@ import type { PdfTextPage, PrintedSection, PrintedStatus } from "./qa-parser";
 
 const NUM = "[-+]?(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?(?:[eE][-+]?\\d+)?";
 const RANGE = new RegExp(`(${NUM})\\s*(?:…|\\.\\.\\.)\\s*(${NUM})`, "g");
-// A slice row has cells after its number. A bare number may be a page footer.
 const SLICE_ROW = /^\d+\s+\S/;
+const READING_ROW = new RegExp(`^(\\d+)\\s+((?:(?:${NUM})\\s*)+)`);
+const THICKNESS_ROW = new RegExp(`^(\\d+)\\s+(${NUM})\\s+(${NUM})\\s+(${NUM})\\s*(?:…|\\.\\.\\.)\\s*(${NUM})`);
 const num = (s: string) => Number(s.replaceAll(",", ""));
 const ranges = (s: string) => [...s.matchAll(RANGE)].map(m => [num(m[1] ?? ""), num(m[2] ?? "")] as [number, number]);
+
+function isIncompleteSliceRow(lines: string[], index: number, rowPattern: RegExp) {
+  const line = lines[index] ?? "";
+  if (SLICE_ROW.test(line)) return true;
+  if (!/^\d+$/.test(line)) return false;
+  // A bare number can also be a footer. Count it only inside a sequence of slice rows.
+  const slice = Number(line);
+  const before = rowPattern.exec(lines[index - 1] ?? "")?.[1];
+  if (Number(before) !== slice - 1) return false;
+  let nextIndex = index + 1;
+  let nextSlice = slice + 1;
+  while (/^\d+$/.test(lines[nextIndex] ?? "") && Number(lines[nextIndex]) === nextSlice) {
+    nextIndex += 1;
+    nextSlice += 1;
+  }
+  return Number(rowPattern.exec(lines[nextIndex] ?? "")?.[1]) === nextSlice;
+}
 
 export const isVa40 = (all: string) => /\|\s*SOMATOM X\.cite\s*\|/.test(all) || /Product\s+Name\s*:?\s+SOMATOM\s+X\.cite\b/.test(all);
 
@@ -112,9 +130,9 @@ export function parseVa40Pages(pages: PdfTextPage[], filename: string, sizeKb: n
       }
 
       if (kind === "rows") {
-        const r = new RegExp(`^(\\d+)\\s+((?:(?:${NUM})\\s*)+)`).exec(line);
+        const r = READING_ROW.exec(line);
         if (!r?.[1] || !r[2]) {
-          if (SLICE_ROW.test(line)) extractionIncomplete = true;
+          if (isIncompleteSliceRow(lines, i, READING_ROW)) extractionIncomplete = true;
           continue;
         }
         const vals = (r[2].match(new RegExp(NUM, "g")) ?? []).map(num);
@@ -130,9 +148,9 @@ export function parseVa40Pages(pages: PdfTextPage[], filename: string, sizeKb: n
           push(c.metric, value, c.band, p.page, { slice: Number(r[1]), baseline, where: `Slice ${r[1]}${c.position ? ` · ${c.position}` : ""}` });
         });
       } else if (kind === "slice") {
-        const r = new RegExp(`^(\\d+)\\s+(${NUM})\\s+(${NUM})\\s+(${NUM})\\s*(?:…|\\.\\.\\.)\\s*(${NUM})`).exec(line);
+        const r = THICKNESS_ROW.exec(line);
         if (r) push("slice", num(r[2]!), [num(r[4]!), num(r[5]!)], p.page, { slice: Number(r[1]), baseline: num(r[3]!), where: `Slice ${r[1]}` });
-        else if (SLICE_ROW.test(line)) extractionIncomplete = true;
+        else if (isIncompleteSliceRow(lines, i, THICKNESS_ROW)) extractionIncomplete = true;
       } else if (kind === "marker" && cols.length === pending.length) {
         // Values precede OK / Out Tol. / In Tol. on the mode description line(s).
         markerBuf.push(line);

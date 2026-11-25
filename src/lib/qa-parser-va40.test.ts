@@ -60,10 +60,18 @@ describe("SOMATOM X.cite (VA40A) reports", () => {
     expect(report).toMatchObject({ printedStatus: "OK", extractionIncomplete: true });
     expect(triage(report)).toMatchObject({ type: "Daily", needsReview: true });
   });
+  it.each([
+    { metric: "noise", lastSlice: 8, table: ["2 Noise (IEC Constancy)", "Slice Results for System A [HU] Status", "Tolerance: 6.83 … 9.25", "6 8.21 In Tol.", "7", "8 8.29 In Tol."] },
+    { metric: "slice", lastSlice: 9, table: ["2 Slice (IEC Constancy)", "Slice System A [mm]", "6 0.9 1.0 0.8 … 1.2 In Tol.", "7", "8", "9 1.1 1.0 0.8 … 1.2 In Tol."] },
+  ])("flags bare slice numbers between readable $metric rows", ({ metric, lastSlice, table }) => {
+    const report = parseSiemensPages([cover, dailySummary, { page: 4, lines: [...table, footer] }], "partial.pdf", 10);
+    expect(report.measurements.map((m) => [m.metric, m.slice])).toEqual([[metric, 6], [metric, lastSlice]]);
+    expect(report).toMatchObject({ printedStatus: "OK", extractionIncomplete: true });
+  });
   it("keeps a readable table complete when a bare page number follows the last row", () => {
-    const page: PdfTextPage = { page: 4, lines: [
+    const page: PdfTextPage = { page: 7, lines: [
       "2 Noise (IEC Constancy)", "Slice Results for System A [HU] Status", "Tolerance: 6.83 … 9.25",
-      "6 8.21 In Tol.", footer, "4",
+      "6 8.21 In Tol.", "7", footer,
     ] };
     const report = parseSiemensPages([cover, dailySummary, page], "complete.pdf", 10);
     expect(report.measurements).toHaveLength(1);
