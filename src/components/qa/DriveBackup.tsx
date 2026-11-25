@@ -29,7 +29,8 @@ export function DriveBackup({ backupJson }: { backupJson: () => string }) {
         setStatus(`Saved ${file}. Check Google Drive to confirm syncing has finished.`);
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Backup action failed.");
+      const message = cause instanceof Error ? cause.message : "Backup action failed.";
+      setError(message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ""));
     } finally {
       setBusy(false);
     }
@@ -38,7 +39,8 @@ export function DriveBackup({ backupJson }: { backupJson: () => string }) {
   return (
     <section className="mb-4 space-y-3 rounded-lg border bg-card p-4" aria-labelledby="drive-backup-title">
       <h2 id="drive-backup-title" className="font-medium">Google Drive backup (beta)</h2>
-      <p className="text-sm text-muted-foreground">Sign into your approved account in Google Drive for desktop, then choose a folder from that account. A full backup includes the QA Library, settings, and filing decisions.</p>
+      <p className="text-sm text-muted-foreground">Open Google Drive in the Windows folder picker and choose or create a folder for the backup. CT QA Manager finds your QA Library automatically.</p>
+      <p className="text-sm text-muted-foreground">If Google Drive is missing from the picker, open Google Drive for desktop and sign in to your approved account first.</p>
       {folder && <p className="break-all text-sm"><strong className="font-medium">Destination</strong> {folder}</p>}
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" disabled={busy} onClick={() => void run("choose")}>{folder ? "Change destination" : "Choose Google Drive folder"}</Button>

@@ -273,11 +273,16 @@ function savedBackupDestination() {
 handleAppMessage("ctqa:backupDestination", () => savedBackupDestination());
 handleAppMessage("ctqa:chooseBackupDestination", async (event) => {
   if (offsiteWrite) throw new Error("Wait for the current backup to finish.");
+  let current = null;
+  try { current = savedBackupDestination(); }
+  catch { /* The picker can replace unreadable destination settings. */ }
   const selection = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
-    title: "Choose a folder in Google Drive for desktop",
+    title: "Choose where Google Drive should save the backup",
+    defaultPath: current ?? app.getPath("home"),
+    buttonLabel: "Use as backup destination",
     properties: ["openDirectory", "createDirectory"],
   });
-  if (selection.canceled) return savedBackupDestination();
+  if (selection.canceled) return current;
   fs.mkdirSync(libraryRoot(), { recursive: true });
   const folder = await backupDestination(selection.filePaths[0], libraryRoot());
   if (offsiteWrite) throw new Error("Wait for the current backup to finish.");

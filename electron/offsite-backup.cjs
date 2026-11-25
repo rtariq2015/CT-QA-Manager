@@ -7,7 +7,7 @@ async function backupDestination(folder, library) {
   const root = await fs.realpath(library);
   const relative = path.relative(root, selected);
   if (!relative || (!path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`))) {
-    throw new Error("Choose a folder outside the QA Library.");
+    throw new Error("Choose a folder outside the QA Library. Open Google Drive in the picker and select a separate backup folder.");
   }
   return selected;
 }
