@@ -40,7 +40,7 @@ const archiveTypes: ReportType[] = ["Daily", "Monthly", "Other"];
 
 export async function saveArchivedReport(report: Report, data?: Uint8Array, original?: Report, source?: string, requireCatalog = false) {
   const bridge = desktop();
-  if (!bridge || report.source !== "uploaded" || (!data && !report.originalUrl)) return false;
+  if (!bridge || report.source !== "uploaded" || (!data && !report.originalUrl)) return { saved: false };
 
   const relativePath = (type: ReportType) => {
     const filed = { ...report, type };
@@ -62,7 +62,7 @@ export async function saveArchivedReport(report: Report, data?: Uint8Array, orig
     if (requireCatalog) throw new Error(result.catalogError);
     log("warning", "folder", result.catalogError);
   }
-  return !result.existed;
+  return { saved: !result.existed, originalUrl: result.originalUrl };
 }
 
 export interface TreeNode { name: string; count: number; notOk: number; children: Map<string, TreeNode> }

@@ -10,6 +10,16 @@ export interface CatalogMetadata {
   source?: string;
 }
 
+export type LoginStatus = "none" | "saved" | "legacy" | "required";
+export type FolderDiagnostic = { code: string; nativeCode?: number };
+export type FolderStart = { ok: true; id: string; total: number } | { ok: false; error: string; diagnostic: FolderDiagnostic };
+export interface FolderBatch {
+  files: { name: string; data: Uint8Array; sourceKey?: string }[];
+  unreadableFiles: string[];
+  unchanged: number;
+  done: boolean;
+}
+
 export interface DesktopBridge {
   listCatalog(): Promise<Report[]>;
   saveFailedImport(name: string, code: PdfFailureCode, bytes: Uint8Array): Promise<FailedImport | null>;
@@ -18,13 +28,15 @@ export interface DesktopBridge {
   reviewFailedImport(id: string): Promise<void>;
   readSettings(): Promise<string | null>;
   saveSettings(json: string): Promise<void>;
-  saveLogin(name: string, user: string, password: string): Promise<boolean>;
-  renameLogin(from: string, to: string): Promise<boolean>;
-  hasLogin(name: string): Promise<boolean>;
-  saveCopy(rel: string, data: Uint8Array, previous?: string[], metadata?: CatalogMetadata): Promise<{ ok: boolean; path?: string; existed?: boolean; error?: string; catalogError?: string }>;
+  saveLogin(source: Source, password: string): Promise<void>;
+  approveLegacyLogin(source: Source): Promise<boolean>;
+  loginStatus(source: Source): Promise<LoginStatus>;
+  saveCopy(rel: string, data: Uint8Array, previous?: string[], metadata?: CatalogMetadata): Promise<{ ok: boolean; path?: string; existed?: boolean; error?: string; catalogError?: string; originalUrl?: string }>;
   openLibrary(): Promise<{ ok: boolean; path: string; error?: string }>;
   testFolder(s: Source): Promise<{ ok: boolean; error?: string }>;
-  readFolder(s: Source, incremental?: boolean): Promise<{ ok: boolean; error?: string; diagnostic?: { code: string; nativeCode?: number }; unreadableFiles?: string[]; unchanged?: number; files: { name: string; data: Uint8Array; sourceKey?: string }[] }>;
+  startFolderScan(s: Source): Promise<FolderStart>;
+  nextFolderBatch(id: string): Promise<FolderBatch>;
+  endFolderScan(id: string): Promise<void>;
 }
 export const desktop = (): DesktopBridge | undefined =>
   typeof window === "undefined" ? undefined : (window as unknown as { ctqaDesktop?: DesktopBridge }).ctqaDesktop;

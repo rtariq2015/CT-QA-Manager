@@ -25,6 +25,7 @@ interface Store {
   today: string;
   schedule: Schedule;
   reports: Report[];
+  classifyReport: (report: Report) => Report;
   addReport: (report: Report) => Report;
   pending: Report[];
   failedImports: FailedImport[];
@@ -250,7 +251,7 @@ export function QaProvider({ children }: { children: ReactNode }) {
             if (!current || current.originalUrl !== report.originalUrl || !needsParserRefresh(current, Boolean(currentOverrides.current[report.id]))) continue;
             const filed = filedReport(updated, currentOverrides.current);
             // Persist the parser revision even if the file stays where it was.
-            const saved = await saveArchivedReport(filed, new Uint8Array(bytes), updated, undefined, true);
+            const { saved } = await saveArchivedReport(filed, new Uint8Array(bytes), updated, undefined, true);
             setLocalReports((all) => all.map((item) => item.id === report.id && item.originalUrl === report.originalUrl ? updated : item));
             scan.recordRead({ report: filed, cached: false, readMs: Math.round(performance.now() - start), saved });
             if (filed.autoFiled && (!current.autoFiled || filed.type !== current.type)) organized++;
@@ -298,17 +299,18 @@ export function QaProvider({ children }: { children: ReactNode }) {
     }
   }, [history, localReports, setOverrides]);
 
+  const classifyReport = useCallback((report: Report) => filedReport(report, currentOverrides.current), []);
   const addReport = useCallback((report: Report) => {
-    const filed = filedReport(report, currentOverrides.current);
+    const filed = classifyReport(report);
     const action = filed.needsReview ? `sent to Review: ${reviewReason(filed) ?? "needs a look"}` : `${filed.autoFiled ? "auto-filed" : "filed"} as ${filed.type}`;
     log(filed.needsReview ? "warning" : "info", "filing", `${report.fileName} ${action}`);
     setLocalReports((reports) => [...reports.filter((r) => r.id !== report.id), report].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)));
     return filed;
-  }, []);
+  }, [classifyReport]);
 
   const value: Store = {
     today: clockDay, schedule,
-    reports, addReport, pending, failedImports, addFailedImport, markFailedImportReviewed, file, catalogReadyForScan, fileMatching, undo, filingBusy, history, lastFiling: history[0],
+    reports, classifyReport, addReport, pending, failedImports, addFailedImport, markFailedImportReviewed, file, catalogReadyForScan, fileMatching, undo, filingBusy, history, lastFiling: history[0],
     theme, compact, overrides,
     restoreFilings: (f) => { const filings = importedFilings(f); setOverrides(filings); setHistory([]); log("info", "settings", `Backup restored: ${Object.keys(filings).length} filings`); },
     toggleTheme: () => setTheme((t) => { const n = t === "dark" ? "light" : "dark"; localStorage.setItem("qa-theme", n); return n; }),

@@ -28,6 +28,9 @@ type ResultStatus = keyof typeof MONTHLY_RESULTS;
 type MonthlyRun = { report: Report; page: number; status: ResultStatus; reference: boolean; recorded: boolean; outside: number };
 
 const reportTime = ({ date, time }: Report) => `${date} ${time.padEnd(8, ":00")}`;
+const newestRunFirst = (a: MonthlyRun, b: MonthlyRun) => reportTime(b.report).localeCompare(reportTime(a.report)) ||
+  MONTHLY_RESULTS[b.status].rank - MONTHLY_RESULTS[a.status].rank;
+const hasOnlyReferenceSections = (report: Report) => Boolean(report.printedSections?.length && report.printedSections.every(({ label }) => isReferenceTest(label)));
 
 export function monthlyResultAlert(status: ResultStatus) {
   return status === "not-ok" || status === "out-of-limit" || status === "aborted" || status === "unassigned";
@@ -68,7 +71,7 @@ function testRuns(report: Report, metric: MetricId) {
   const sections = testSections(report, metric);
   const routineSections = sections.filter(({ label }) => !isReferenceTest(label));
   const referenceSections = sections.filter(({ label }) => isReferenceTest(label));
-  const referenceOnlyReport = Boolean(report.printedSections?.length && report.printedSections.every(({ label }) => isReferenceTest(label)));
+  const referenceOnlyReport = hasOnlyReferenceSections(report);
   const hasReference = Boolean(referenceSections.length || measurements.some(({ referenceTest }) => referenceTest === true) || referenceOnlyReport);
   const hasRoutine = Boolean(routineSections.length || measurements.some(({ referenceTest }) => referenceTest === false));
   const routineReadings: Measurement[] = [];
@@ -85,20 +88,26 @@ function testRuns(report: Report, metric: MetricId) {
     .filter((run): run is MonthlyRun => run !== undefined);
 }
 
-export function monthlyChecklistRows(reports: Report[]) {
+export function monthlyChecklistRows(reports: Report[], additionalReferences: Report[] = []) {
   return MONTHLY_CHECKLIST.map(({ metric, label }) => {
-    const runs = reports.flatMap((report) => testRuns(report, metric)).sort((a, b) => reportTime(b.report).localeCompare(reportTime(a.report)) ||
-      MONTHLY_RESULTS[b.status].rank - MONTHLY_RESULTS[a.status].rank);
+    const runs = reports.flatMap((report) => testRuns(report, metric)).sort(newestRunFirst);
     // Establishing a reference is separate evidence from a routine constancy retest.
     const current = runs.find(({ reference }) => !reference) ?? runs[0];
-    return { metric, label, current, history: runs.filter((run) => run !== current), recorded: runs.some((run) => run.recorded) };
+    const history = runs.filter((run) => run !== current);
+    if (additionalReferences.length) {
+      history.push(...additionalReferences.flatMap((report) => testRuns(report, metric)).filter(({ reference }) => reference));
+      history.sort(newestRunFirst);
+    }
+    return { metric, label, current, history, recorded: runs.some((run) => run.recorded) };
   });
 }
 
 /** Use the same evidence for Today, the checklist and the printable summary. */
 export function monthlyCoverage(reports: Report[], scanner: ScannerId, month: string) {
-  const filed = reports.filter((report) => report.scanner === scanner && report.date.startsWith(month) && report.type === "Monthly");
-  const items = monthlyChecklistRows(filed);
+  const matching = reports.filter((report) => report.scanner === scanner && report.date.startsWith(month));
+  const filed = matching.filter((report) => report.type === "Monthly");
+  const references = matching.filter((report) => report.type === "Other" && hasOnlyReferenceSections(report));
+  const items = monthlyChecklistRows(filed, references);
   const done = items.filter(({ recorded }) => recorded).length;
   const passed = items.filter(({ current }) => current?.status === "ok" && !current.reference).length;
   const missing = items.filter(({ current }) => !current);

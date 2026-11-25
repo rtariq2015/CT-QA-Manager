@@ -18,6 +18,11 @@ export function ScannerLights() {
           <span className="font-medium break-words">{source.name}</span>
         </li>;
       })}
+      {connection.state === "reading" && connection.total > 0 && <li className="text-xs tabular-nums text-muted-foreground">
+        <span role="progressbar" aria-label={`Checking PDFs in ${connection.folder ?? "the folder"}`} aria-valuemin={0} aria-valuemax={connection.total} aria-valuenow={connection.done}>
+          {connection.done} / {connection.total} PDFs
+        </span>
+      </li>}
     </ul>
   );
 }

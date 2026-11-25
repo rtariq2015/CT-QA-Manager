@@ -7,7 +7,9 @@ const { app, BrowserWindow, dialog, shell, ipcMain, protocol, safeStorage } = re
 const { execFile } = require("child_process");
 const path = require("path");
 const fs = require("fs");
-const { createCatalog, sourceFingerprint } = require("./catalog.cjs");
+const { createCatalog } = require("./catalog.cjs");
+const { createFolderScan } = require("./folder-scan.cjs");
+const { createNetworkLogins } = require("./network-logins.cjs");
 const { createHash, randomUUID } = require("crypto");
 
 const CLIENT_DIR = path.join(__dirname, "..", "dist", "client");
@@ -118,6 +120,9 @@ function createWindow() {
     }
   });
 
+  const clearFolderScan = () => folderScans.delete(win.webContents);
+  win.webContents.on("did-navigate", clearFolderScan);
+  win.webContents.on("render-process-gone", clearFolderScan);
   void win.loadURL(`${APP_URL}#/`);
   return win;
 }
@@ -154,35 +159,20 @@ handleAppMessage("ctqa:saveSettings", (_event, json) => {
   }
 });
 
-// ---- Network logins: encrypted with Windows (DPAPI via safeStorage), never stored in plain text.
-const loginFile = () => path.join(app.getPath("userData"), "logins.json");
-function readLogins() { try { return JSON.parse(fs.readFileSync(loginFile(), "utf8")); } catch { return {}; } }
-function getLogin(name) {
-  const l = readLogins()[name];
-  if (!l) return null;
-  try { return { user: l.user, password: safeStorage.decryptString(Buffer.from(l.pass, "base64")) }; } catch { return null; }
-}
-handleAppMessage("ctqa:saveLogin", (_e, name, user, password) => {
-  if (!safeStorage.isEncryptionAvailable()) throw new Error("Windows encryption is not available");
-  const all = readLogins();
-  all[name] = { user: String(user || ""), pass: safeStorage.encryptString(String(password || "")).toString("base64") };
-  fs.writeFileSync(loginFile(), JSON.stringify(all));
-  return true;
-});
-handleAppMessage("ctqa:renameLogin", (_e, from, to) => {
-  const all = readLogins();
-  if (!all[from] || from === to || all[to]) return false;
-  all[to] = all[from]; delete all[from];
-  fs.writeFileSync(loginFile(), JSON.stringify(all));
-  return true;
-});
-handleAppMessage("ctqa:hasLogin", (_e, name) => !!readLogins()[name]);
+// Windows protects saved passwords. The network share and account identify each login.
+const networkLogins = () => createNetworkLogins(
+  path.join(app.getPath("userData"), "network-logins.json"),
+  path.join(app.getPath("userData"), "logins.json"),
+  safeStorage,
+);
+handleAppMessage("ctqa:loginStatus", (_e, source) => networkLogins().status(source));
+handleAppMessage("ctqa:saveLogin", (_e, source, password) => networkLogins().save(source, password));
+handleAppMessage("ctqa:approveLegacyLogin", (_e, source) => networkLogins().approveLegacy(source));
 
-function shareRoot(p) { const m = /^(\\\\[^\\]+\\[^\\]+)/.exec(p); return m ? m[1] : null; }
 function netUse(root, login) {
   return new Promise((resolve) => {
     if (process.platform !== "win32" || !root || !login) return resolve("skipped");
-    execFile("net", ["use", root, login.password, `/user:${login.user}`, "/persistent:no"], { windowsHide: true }, (err, _o, stderr) => {
+    execFile("net", ["use", root, login.password, ...(login.user ? [`/user:${login.user}`] : []), "/persistent:no"], { windowsHide: true }, (err, _o, stderr) => {
       const match = /\b(?:System error|error)\s+(\d+)\b/i.exec(String(stderr));
       const nativeCode = match ? Number(match[1]) : /\b1219\b/.test(String(stderr)) ? 1219 : undefined;
       // Windows may already have a connection under another account. Try reading it.
@@ -190,56 +180,27 @@ function netUse(root, login) {
     });
   });
 }
-async function walkPdfs(dir, out = []) {
-  for (const e of await fs.promises.readdir(dir, { withFileTypes: true })) {
-    const full = path.join(dir, e.name);
-    if (e.isDirectory()) await walkPdfs(full, out);
-    else if (e.name.toLowerCase().endsWith(".pdf")) out.push(full);
-    if (out.length > 5000) throw new Error("This folder contains more than 5,000 PDFs. Select a scanner or date subfolder.");
-  }
-  return out;
+function folderFailure(source, code, message, nativeCode) {
+  return { ok: false, error: `${source.name}: ${message}`, diagnostic: { code, nativeCode } };
 }
-handleAppMessage("ctqa:readFolder", async (_e, source, incremental = false, checkOnly = false) => {
-  const p = String(source.path || "");
-  let login = null;
-  let loginResult = null;
-  if (source.kind === "network") {
-    login = getLogin(source.name);
-    loginResult = await netUse(shareRoot(p), login);
-    if (loginResult?.code === "network-login-failed") {
-      return { ok: false, error: `Login failed for ${source.name}. Check the saved account and password.`, diagnostic: loginResult, files: [] };
-    }
-  }
+
+async function openSourceFolder(source, open) {
+  let loginResult;
   try {
-    if (checkOnly === true) {
-      await fs.promises.readdir(p);
-      return { ok: true, files: [] };
-    }
-    const paths = await walkPdfs(p);
-    const files = [];
-    const unreadableFiles = [];
-    let unchanged = 0;
-    for (const file of paths) {
-      const name = path.basename(file);
-      try {
-        const before = await fs.promises.stat(file);
-        const fingerprint = sourceFingerprint(file, before);
-        if (incremental && catalog.hasSource(fingerprint)) {
-          unchanged++;
-          continue;
-        }
-        const data = await fs.promises.readFile(file);
-        const after = await fs.promises.stat(file);
-        files.push({ name, data, sourceKey: fingerprint === sourceFingerprint(file, after) ? fingerprint : undefined });
-      } catch {
-        unreadableFiles.push(name);
+    const p = String(source.path || "").trim();
+    if (source.kind === "network") {
+      const { status, root, login } = networkLogins().connection(source);
+      if (status === "legacy" || status === "required") {
+        return folderFailure(source, "network-login-approval", "Approve or save a login for this network share in Settings.");
+      }
+      loginResult = await netUse(root, login);
+      if (loginResult?.code === "network-login-failed") {
+        return folderFailure(source, loginResult.code, "Login failed. Check the saved account and password.", loginResult.nativeCode);
       }
     }
-    return { ok: true, files, unreadableFiles, unchanged };
+    return { ok: true, ...await open(p) };
   } catch (error) {
-    if (error.message.startsWith("This folder contains")) {
-      return { ok: false, error: error.message, diagnostic: { code: "folder-limit" }, files: [] };
-    }
+    if (error.code === "folder-limit") return folderFailure(source, error.code, error.message);
     const code = loginResult?.code === "credential-conflict" ? "credential-conflict"
       : error.code === "EACCES" || error.code === "EPERM" ? "folder-access-denied"
       : error.code === "ENOENT" || error.code === "ENOTDIR" ? "folder-not-found" : "folder-unavailable";
@@ -247,8 +208,42 @@ handleAppMessage("ctqa:readFolder", async (_e, source, incremental = false, chec
     const message = code === "credential-conflict" ? "Windows already has a connection using a different account."
       : code === "folder-access-denied" ? "Access to the folder was denied."
       : code === "folder-not-found" ? "The folder or drive could not be found." : "The folder could not be opened.";
-    return { ok: false, error: `${source.name}: ${message}`, diagnostic: { code, nativeCode }, files: [] };
+    return folderFailure(source, code, message, nativeCode);
   }
+}
+
+const folderScans = new WeakMap();
+handleAppMessage("ctqa:testFolder", (_e, source) => openSourceFolder(source, async (p) => {
+  await fs.promises.readdir(p);
+}));
+handleAppMessage("ctqa:startFolderScan", async (event, source) => {
+  const owner = event.sender;
+  const previous = folderScans.get(owner);
+  if (previous?.frame === event.senderFrame) return folderFailure(source, "folder-busy", "Another folder scan is running.");
+  const state = { id: randomUUID(), frame: event.senderFrame, reading: false };
+  folderScans.set(owner, state);
+  try {
+    return await openSourceFolder(source, async (p) => {
+      state.scan = await createFolderScan(p, (fingerprint) => catalog.hasSource(fingerprint));
+      return { id: state.id, total: state.scan.total };
+    });
+  } finally {
+    if (!state.scan && folderScans.get(owner) === state) folderScans.delete(owner);
+  }
+});
+handleAppMessage("ctqa:nextFolderBatch", async (event, id) => {
+  const state = folderScans.get(event.sender);
+  if (!state?.scan || state.id !== id || state.frame !== event.senderFrame || state.reading) throw new Error("Folder scan is unavailable");
+  state.reading = true;
+  try {
+    return await state.scan.next();
+  } finally {
+    state.reading = false;
+  }
+});
+handleAppMessage("ctqa:endFolderScan", (event, id) => {
+  const state = folderScans.get(event.sender);
+  if (state?.id === id && state.frame === event.senderFrame) folderScans.delete(event.sender);
 });
 
 // Backup copies of every PDF read, organized Scanner/Year/Month/Type, next to the program.
@@ -305,10 +300,14 @@ handleAppMessage("ctqa:saveCopy", (_e, rel, data, previous = [], metadata) => {
       }
       return undefined;
     };
-    const keepExistingCopy = (file) => {
+    const finishCopy = (file, existed) => {
       const catalogError = remember(file);
       if (!catalogError) removePreviousCopies(alternatives, buf, metadata?.reportId);
-      return { ok: true, path: file, existed: true, catalogError };
+      const id = metadata?.reportId;
+      const originalUrl = !catalogError && catalog.fileForReport(id)
+        ? `${APP_URL}saved-report/${createHash("sha256").update(id).digest("hex")}.pdf`
+        : undefined;
+      return { ok: true, path: file, existed, catalogError, originalUrl };
     };
     const sameBytes = (file) => {
       const stat = fs.statSync(file);
@@ -317,7 +316,7 @@ handleAppMessage("ctqa:saveCopy", (_e, rel, data, previous = [], metadata) => {
     // A cataloged copy can have a suffix even when its base name is available again.
     const saved = catalog.fileForReport(metadata?.reportId);
     if (saved && !path.relative(fs.realpathSync(dir), path.dirname(saved)) && sameBytes(saved)) {
-      return keepExistingCopy(saved);
+      return finishCopy(saved, true);
     }
     let target = destination;
     for (let suffix = 2; ; suffix++) {
@@ -327,12 +326,10 @@ handleAppMessage("ctqa:saveCopy", (_e, rel, data, previous = [], metadata) => {
       } catch (err) {
         if (err.code !== "EEXIST") throw err;
       }
-      if (sameBytes(target)) return keepExistingCopy(target);
+      if (sameBytes(target)) return finishCopy(target, true);
       target = path.join(dir, `${stem}_${suffix}${ext}`);
     }
-    const catalogError = remember(target);
-    if (!catalogError) removePreviousCopies(alternatives, buf, metadata?.reportId);
-    return { ok: true, path: target, existed: false, catalogError };
+    return finishCopy(target, false);
   } catch (err) { return { ok: false, error: String(err && err.message || err) }; }
 });
 const inbox = () => path.join(libraryRoot(), "Review Inbox");

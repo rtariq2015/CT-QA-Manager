@@ -87,7 +87,7 @@ function Folders() {
           {bridge && <Button variant="outline" onClick={() => void bridge.openLibrary().then(({ ok, error }) => {
             if (!ok) toast.error(error ?? "The saved PDFs folder could not be opened");
           }, () => toast.error("The saved PDFs folder could not be opened"))}><Library />Open saved PDFs</Button>}
-          <Button onClick={openFolder} disabled={!!busy}><FolderOpen />Import from folder</Button>
+          <Button onClick={openFolder} disabled={!!busy || reading}><FolderOpen />Import from folder</Button>
         </div>
       </PageHeader>
       {inputEl}

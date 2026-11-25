@@ -11,7 +11,7 @@ import { PageHeader, Pill } from "@/components/qa/ui";
 import { LiveLogView, useConnection } from "@/components/qa/LiveLog";
 import { exportDiagnostic, folderCheck, log, recordFolderCheck } from "@/lib/qa-logger";
 import { buildUsbPackage } from "@/lib/qa-portable";
-import { desktop } from "@/lib/qa-desktop";
+import { desktop, type LoginStatus } from "@/lib/qa-desktop";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -34,6 +34,7 @@ const KIND_HINT: Record<FolderKind, string> = {
   network: "A shared folder on the hospital network — needs a login.",
 };
 const inp = "h-11 w-full rounded-md border bg-card px-3";
+const loginKey = (source: Source) => JSON.stringify([source.name, source.path, source.user ?? "", kindOf(source)]);
 
 function download(name: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
@@ -44,20 +45,34 @@ function Settings() {
   const qa = useQa();
   const conn = useConnection();
   const [cfg, setCfg] = useState<Config>(DEFAULT);
-  const [savedNames, setSavedNames] = useState<string[]>([]);
   const [pw, setPw] = useState<Record<string, string>>({});
-  const [saved, setSaved] = useState<Record<string, boolean>>({});
+  const [saved, setSaved] = useState<Record<string, LoginStatus>>({});
+  const [loginRevision, setLoginRevision] = useState(0);
   const [isDesktop, setIsDesktop] = useState(false);
   const [testing, setTesting] = useState<number>();
-  useEffect(() => { const d = desktop(); setIsDesktop(!!d); if (d) void Promise.all(cfg.sources.map(async (s) => [s.name, await d.hasLogin(s.name)] as const)).then((r) => setSaved(Object.fromEntries(r))); }, [cfg.sources]);
-  useEffect(() => { try { const s = localStorage.getItem(KEY); if (s) { const c = normalizeConfig(JSON.parse(s) as unknown); setCfg(c); setSavedNames(c.sources.map((x) => x.name)); } else setSavedNames(DEFAULT.sources.map((x) => x.name)); } catch { /* ignore */ } }, []);
+  useEffect(() => {
+    const d = desktop();
+    setIsDesktop(Boolean(d));
+    if (!d) return;
+    let active = true;
+    void Promise.all(cfg.sources.filter((source) => kindOf(source) === "network").map(async (source) => [
+      loginKey(source), await d.loginStatus({ ...source, kind: "network" }),
+    ] as const)).then((rows) => { if (active) setSaved(Object.fromEntries(rows)); })
+      .catch(() => { if (active) setSaved({}); });
+    return () => { active = false; };
+  }, [cfg.sources, loginRevision]);
+  useEffect(() => {
+    try {
+      const text = localStorage.getItem(KEY);
+      if (text) setCfg(normalizeConfig(JSON.parse(text)));
+    } catch { /* use defaults for malformed local data */ }
+  }, []);
   useEffect(() => {
     const refresh = () => {
       const text = localStorage.getItem(KEY);
       if (!text) return;
       const next = normalizeConfig(JSON.parse(text));
       setCfg(next);
-      setSavedNames(next.sources.map((source) => source.name));
     };
     window.addEventListener("ctqa:settings", refresh);
     return () => window.removeEventListener("ctqa:settings", refresh);
@@ -95,22 +110,15 @@ function Settings() {
       const next = parseSettingsJson(buildSettingsJson(cfg));
       const d = desktop();
       if (d) {
-        // Keep the saved credential when a scanner folder is renamed.
-        for (const [i, s] of next.sources.entries()) {
-          const old = savedNames[i];
-          if (old && old !== s.name && !pw[s.name] && next.sources.length === savedNames.length && !next.sources.some((x) => x.name === old)) {
-            await d.renameLogin(old, s.name);
-          }
+        for (const source of next.sources) {
+          const password = pw[loginKey(source)];
+          if (password && kindOf(source) === "network") await d.saveLogin(source, password);
         }
-        for (const s of next.sources) {
-          const password = pw[s.name];
-          if (password && kindOf(s) === "network") await d.saveLogin(s.name, s.user ?? "", password);
-        }
+        setLoginRevision((value) => value + 1);
       }
       await persist(next);
       if (d) window.dispatchEvent(new Event("ctqa:reconnect"));
       setPw({});
-      setSavedNames(next.sources.map((s) => s.name));
       toast.success(d ? "Settings.json saved · connecting folders" : "Settings saved on this computer");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save settings");
@@ -123,12 +131,24 @@ function Settings() {
       const next = parseSettingsJson(await file.text());
       await persist(next);
       setCfg(next);
-      setSavedNames(next.sources.map((s) => s.name));
       setPw({});
       if (desktop()) window.dispatchEvent(new Event("ctqa:reconnect"));
       toast.success("Scanner folder settings imported");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not import settings");
+    }
+  };
+
+  const approveLogin = async (source: Source) => {
+    try {
+      const approved = await desktop()?.approveLegacyLogin({ ...source, kind: "network" });
+      setLoginRevision((value) => value + 1);
+      if (approved) {
+        window.dispatchEvent(new Event("ctqa:reconnect"));
+        toast.success(`Network login approved for ${source.name}`);
+      }
+    } catch {
+      toast.error("Could not approve the saved network login.");
     }
   };
 
@@ -153,7 +173,6 @@ function Settings() {
         const next = b.settings;
         await persist(next);
         setCfg(next);
-        setSavedNames(next.sources.map((s) => s.name));
         setPw({});
       }
       qa.restoreFilings(b.filings);
@@ -187,10 +206,12 @@ function Settings() {
                 const kind = kindOf(s);
                 const check = folderCheck(conn, s);
                 const configured = Boolean(s.path.trim() && s.path.trim() !== "\\\\");
+                const key = loginKey(s);
+                const login = saved[key];
                 return (
                   <div key={i} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[180px_1fr_auto]">
                     <input className={inp} value={s.name} onChange={(e) => setSrc(i, { name: e.target.value })} aria-label="Scanner name" />
-                    <input className={`${inp} font-mono text-sm`} value={s.path} onChange={(e) => setSrc(i, { path: e.target.value })} aria-label="Folder path" placeholder={kind === "local" ? "C:\Users\you\Desktop\QA or E:\EXCITE-ED" : "\\\\server\share"} />
+                    <input className={`${inp} font-mono text-sm`} value={s.path} onChange={(e) => setSrc(i, { path: e.target.value })} aria-label="Folder path" placeholder={kind === "local" ? String.raw`C:\Users\you\Desktop\QA or E:\EXCITE-ED` : String.raw`\\server\share`} />
                     <Button variant="outline" size="icon" className="size-11" aria-label="Remove" onClick={() => set({ sources: cfg.sources.filter((_, j) => j !== i) })}><Trash2 /></Button>
                     <div className="flex flex-wrap items-center gap-2 sm:col-span-3">
                       <span className="text-sm text-muted-foreground">Folder type</span>
@@ -203,7 +224,7 @@ function Settings() {
                         ))}
                       </div>
                       <span className="text-xs text-muted-foreground">{KIND_HINT[kind]}</span>
-                      {isDesktop && <Button type="button" size="sm" variant="outline" disabled={!configured || testing !== undefined || (kind === "network" && Boolean(pw[s.name]))}
+                      {isDesktop && <Button type="button" size="sm" variant="outline" disabled={!configured || testing !== undefined || (kind === "network" && Boolean(pw[key]))}
                         onClick={() => void testConnection(s, i)}>{testing === i ? "Testing…" : "Test connection"}</Button>}
                       {check?.ok === false ? <Pill tone="bad">Last check failed</Pill>
                         : check?.ok ? <Pill tone="ok">Folder reachable</Pill>
@@ -214,7 +235,12 @@ function Settings() {
                     {kind === "network" && (
                       <div className="grid gap-2 sm:col-span-3 sm:grid-cols-2">
                         <label className="text-sm">Username<input className={`${inp} mt-1`} placeholder="HOSPITAL\\username" autoComplete="off" value={s.user ?? ""} onChange={(e) => setSrc(i, { user: e.target.value })} /></label>
-                        <label className="text-sm">Password<input type="password" className={`${inp} mt-1`} autoComplete="new-password" disabled={!isDesktop} placeholder={!isDesktop ? "Only in the desktop program" : saved[s.name] ? "Saved ✓ (type to change)" : "Network password"} value={pw[s.name] ?? ""} onChange={(e) => setPw((o) => ({ ...o, [s.name]: e.target.value }))} /></label>
+                        <label className="text-sm">Password<input type="password" className={`${inp} mt-1`} autoComplete="new-password" disabled={!isDesktop} placeholder={!isDesktop ? "Only in the desktop program" : login === "saved" ? "Saved for this share" : "Network password"} value={pw[key] ?? ""} onChange={(e) => setPw((o) => ({ ...o, [key]: e.target.value }))} /></label>
+                        {login === "legacy" && <div className="space-y-2 text-sm sm:col-span-2">
+                          <p>Approve {s.user ? <strong>{s.user}</strong> : "your Windows account"} for <span className="break-all font-mono">{s.path.trim()}</span>.</p>
+                          <Button size="sm" variant="outline" onClick={() => void approveLogin(s)}>Use saved login for this share</Button>
+                        </div>}
+                        {login === "required" && <p className="text-sm text-warn-foreground dark:text-warn sm:col-span-2">Enter the username and password for this network share, then save.</p>}
                       </div>
                     )}
                   </div>
