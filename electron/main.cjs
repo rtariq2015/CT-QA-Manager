@@ -10,6 +10,7 @@ const fs = require("fs");
 const { createCatalog } = require("./catalog.cjs");
 const { createFolderScan } = require("./folder-scan.cjs");
 const { createNetworkLogins } = require("./network-logins.cjs");
+const { backupDestination, writeOffsiteBackup } = require("./offsite-backup.cjs");
 const { createHash, randomUUID } = require("crypto");
 
 const CLIENT_DIR = path.join(__dirname, "..", "dist", "client");
@@ -127,11 +128,16 @@ function createWindow() {
   return win;
 }
 
+let offsiteWrite;
+const archiveWrites = new Set(["ctqa:saveCopy", "ctqa:saveFailedImport", "ctqa:reviewFailedImport"]);
 function handleAppMessage(channel, handler) {
   ipcMain.handle(channel, (event, ...args) => {
     const frame = event.senderFrame;
     if (!frame || frame !== event.sender.mainFrame || !frame.url.startsWith(APP_URL)) {
       throw new Error("Desktop actions are only available in the app window");
+    }
+    if (offsiteWrite && archiveWrites.has(channel)) {
+      return offsiteWrite.catch(() => {}).then(() => handler(event, ...args));
     }
     return handler(event, ...args);
   });
@@ -252,6 +258,56 @@ const libraryRoot = () => app.isPackaged
   : path.join(app.getPath("userData"), "QA Library");
 const catalog = createCatalog(libraryRoot);
 handleAppMessage("ctqa:listCatalog", () => catalog.reports(APP_URL));
+
+const offsiteConfig = () => path.join(app.getPath("userData"), "backup-destination.json");
+function savedBackupDestination() {
+  try {
+    const { folder } = JSON.parse(fs.readFileSync(offsiteConfig(), "utf8"));
+    if (typeof folder === "string" && path.isAbsolute(folder)) return folder;
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  return null;
+}
+
+handleAppMessage("ctqa:backupDestination", () => savedBackupDestination());
+handleAppMessage("ctqa:chooseBackupDestination", async (event) => {
+  if (offsiteWrite) throw new Error("Wait for the current backup to finish.");
+  const selection = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+    title: "Choose a folder in Google Drive for desktop",
+    properties: ["openDirectory", "createDirectory"],
+  });
+  if (selection.canceled) return savedBackupDestination();
+  fs.mkdirSync(libraryRoot(), { recursive: true });
+  const folder = await backupDestination(selection.filePaths[0], libraryRoot());
+  if (offsiteWrite) throw new Error("Wait for the current backup to finish.");
+  const file = offsiteConfig();
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, JSON.stringify({ folder }), { flag: "wx" });
+    fs.renameSync(temporary, file);
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
+  return folder;
+});
+handleAppMessage("ctqa:disconnectBackupDestination", () => {
+  if (offsiteWrite) throw new Error("Wait for the current backup to finish.");
+  fs.rmSync(offsiteConfig(), { force: true });
+});
+handleAppMessage("ctqa:writeOffsiteBackup", async (_event, settings) => {
+  if (offsiteWrite) throw new Error("A backup is already running.");
+  if (settings !== undefined && typeof settings !== "string") throw new Error("Invalid backup settings.");
+  const destination = savedBackupDestination();
+  if (!destination) throw new Error("Choose a backup folder first.");
+  fs.mkdirSync(libraryRoot(), { recursive: true });
+  offsiteWrite = writeOffsiteBackup(destination, libraryRoot(), settings);
+  try {
+    return await offsiteWrite;
+  } finally {
+    offsiteWrite = undefined;
+  }
+});
 const safePart = (x) => String(x).trim().replace(/[<>:"|?*\\/]/g, "_").replace(/^\.+/, "_").trim() || "_";
 function archivePath(rel) {
   return path.join(libraryRoot(), ...rel.split("/").map(safePart));

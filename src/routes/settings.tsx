@@ -13,6 +13,7 @@ import { LiveLogView, useConnection } from "@/components/qa/LiveLog";
 import { exportDiagnostic, folderCheck, log, recordFolderCheck } from "@/lib/qa-logger";
 import { buildUsbPackage } from "@/lib/qa-portable";
 import { desktop, type LoginStatus } from "@/lib/qa-desktop";
+import { DriveBackup } from "@/components/qa/DriveBackup";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -292,6 +293,7 @@ function Settings() {
                 <input type="file" accept=".json,application/json" className="sr-only" onChange={(e) => { void restore(e.target.files?.[0]); e.target.value = ""; }} /></label>
             </div>
           </section>
+          {isDesktop && <DriveBackup backupJson={() => JSON.stringify(makeBackup(qa.overrides, cfg), null, 2)} />}
           {isDesktop && <section className="mb-4 rounded-lg border bg-card p-4">
             <h2 className="mb-1 font-medium">Windows updates</h2>
             <p className="mb-3 text-sm text-muted-foreground">Close the app, extract the smaller Update ZIP, then open Apply-Update.cmd and select the program folder.</p>
