@@ -274,7 +274,9 @@ handleAppMessage("ctqa:backupDestination", () => savedBackupDestination());
 handleAppMessage("ctqa:chooseBackupDestination", async (event) => {
   if (offsiteWrite) throw new Error("Wait for the current backup to finish.");
   const selection = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
-    title: "Choose a folder in Google Drive for desktop",
+    title: "Choose where Google Drive should save the backup",
+    defaultPath: savedBackupDestination() ?? app.getPath("home"),
+    buttonLabel: "Use as backup destination",
     properties: ["openDirectory", "createDirectory"],
   });
   if (selection.canceled) return savedBackupDestination();
