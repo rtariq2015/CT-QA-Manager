@@ -60,6 +60,10 @@ export function startScan(source: ScanSummary["source"], sourceReadMs = 0, confi
     ...(configuredFolder === undefined ? {} : { configuredFolder }),
   };
   return {
+    recordSourceBatch(readMs: number, unchanged: number) {
+      summary.sourceReadMs += readMs;
+      if (unchanged) summary.unchanged = (summary.unchanged ?? 0) + unchanged;
+    },
     recordRead({ report, cached, readMs, saved, archiveError }: PdfImportResult) {
       summary.read++;
       if (report.autoFiled) increment(summary.automaticallyFiled, report.type);

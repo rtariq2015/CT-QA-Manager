@@ -50,6 +50,16 @@ describe("SOMATOM X.cite (VA40A) reports", () => {
     expect(r.measurements).toHaveLength(1);
     expect(r.measurements[0]).toMatchObject({ value: 1500, lower: 1000, upper: 2000 });
   });
+  it("retains readable X.cite rows and flags a numbered row with a missing value", () => {
+    const page: PdfTextPage = { page: 4, lines: [
+      "2 Noise (IEC Constancy)", "Slice Results for System A [HU] Status", "Tolerance: 6.83 … 9.25",
+      "6 8.21 In Tol.", "7 — In Tol.", "8 8.29 In Tol.", footer,
+    ] };
+    const report = parseSiemensPages([cover, dailySummary, page], "partial.pdf", 10);
+    expect(report.measurements.map(({ slice, value }) => [slice, value])).toEqual([[6, 8.21], [8, 8.29]]);
+    expect(report).toMatchObject({ printedStatus: "OK", extractionIncomplete: true });
+    expect(triage(report)).toMatchObject({ type: "Daily", needsReview: true });
+  });
   it("retains the printed MTF reference values", () => {
     const page: PdfTextPage = {
       page: 4,

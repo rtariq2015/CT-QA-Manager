@@ -10,6 +10,7 @@ import type { PdfTextPage, PrintedSection, PrintedStatus } from "./qa-parser";
 
 const NUM = "[-+]?(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?(?:[eE][-+]?\\d+)?";
 const RANGE = new RegExp(`(${NUM})\\s*(?:…|\\.\\.\\.)\\s*(${NUM})`, "g");
+const SLICE_ROW = /^\d+(?:\s|$)/;
 const num = (s: string) => Number(s.replaceAll(",", ""));
 const ranges = (s: string) => [...s.matchAll(RANGE)].map(m => [num(m[1] ?? ""), num(m[2] ?? "")] as [number, number]);
 
@@ -111,7 +112,10 @@ export function parseVa40Pages(pages: PdfTextPage[], filename: string, sizeKb: n
 
       if (kind === "rows") {
         const r = new RegExp(`^(\\d+)\\s+((?:(?:${NUM})\\s*)+)`).exec(line);
-        if (!r?.[1] || !r[2]) continue;
+        if (!r?.[1] || !r[2]) {
+          if (SLICE_ROW.test(line)) extractionIncomplete = true;
+          continue;
+        }
         const vals = (r[2].match(new RegExp(NUM, "g")) ?? []).map(num);
         const stride = pendingRef ? 2 : 1;
         if (cols.length !== pending.length || vals.length !== cols.length * stride) {
@@ -127,6 +131,7 @@ export function parseVa40Pages(pages: PdfTextPage[], filename: string, sizeKb: n
       } else if (kind === "slice") {
         const r = new RegExp(`^(\\d+)\\s+(${NUM})\\s+(${NUM})\\s+(${NUM})\\s*(?:…|\\.\\.\\.)\\s*(${NUM})`).exec(line);
         if (r) push("slice", num(r[2]!), [num(r[4]!), num(r[5]!)], p.page, { slice: Number(r[1]), baseline: num(r[3]!), where: `Slice ${r[1]}` });
+        else if (SLICE_ROW.test(line)) extractionIncomplete = true;
       } else if (kind === "marker" && cols.length === pending.length) {
         // Values precede OK / Out Tol. / In Tol. on the mode description line(s).
         markerBuf.push(line);

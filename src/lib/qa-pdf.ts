@@ -18,11 +18,16 @@ export interface PdfImportResult {
   archiveError?: string;
 }
 
+type ImportActions = {
+  classifyReport: (report: Report) => Report;
+  addReport: (report: Report) => Report;
+  addFailedImport: (failure: FailedImport) => void;
+};
+
 /** Import through the same filing and archive path for folders and individual PDFs. */
 export async function importQaPdf(
   file: File,
-  addReport: (report: Report) => Report,
-  addFailedImport: (failure: FailedImport) => void,
+  { classifyReport, addReport, addFailedImport }: ImportActions,
   sourceKey?: string,
 ): Promise<PdfImportResult> {
   const start = performance.now();
@@ -53,21 +58,23 @@ export async function importQaPdf(
     }
     throw error;
   }
-  const originalUrl = sourceUrls.get(parsed) ?? URL.createObjectURL(file);
-  sourceUrls.set(parsed, originalUrl);
-  const report = { ...parsed, originalUrl };
-  const filed = addReport(report);
-  const result = { report: filed, cached, readMs: Math.round(performance.now() - start) };
-  if (!bridge) return { ...result, saved: false };
-
-  try {
-    const saved = await saveArchivedReport(filed, new Uint8Array(bytes), parsed, sourceKey);
-    return { ...result, saved };
-  } catch (err) {
-    const archiveError = err instanceof Error ? err.message : String(err);
-    log("error", "folder", `Could not save a copy of ${file.name}: ${archiveError}`);
-    return { ...result, saved: false, archiveError };
+  const readMs = Math.round(performance.now() - start);
+  let originalUrl: string | undefined;
+  let saved = false;
+  let archiveError: string | undefined;
+  if (bridge) {
+    try {
+      ({ saved, originalUrl } = await saveArchivedReport(classifyReport(parsed), new Uint8Array(bytes), parsed, sourceKey));
+    } catch (err) {
+      archiveError = err instanceof Error ? err.message : String(err);
+      log("error", "folder", `Could not save a copy of ${file.name}: ${archiveError}`);
+    }
   }
+  if (!originalUrl) {
+    originalUrl = sourceUrls.get(parsed) ?? URL.createObjectURL(file);
+    sourceUrls.set(parsed, originalUrl);
+  }
+  return { report: addReport({ ...parsed, originalUrl }), cached, readMs, saved, ...(archiveError === undefined ? {} : { archiveError }) };
 }
 
 async function sessionFailure(file: File, code: FailedImport["code"]): Promise<FailedImport> {

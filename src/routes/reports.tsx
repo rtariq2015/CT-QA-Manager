@@ -51,7 +51,7 @@ export const Route = createFileRoute("/reports")({
 const ROW = 52;
 
 function Reports() {
-  const { reports, addReport, addFailedImport, today } = useQa();
+  const { reports, classifyReport, addReport, addFailedImport, today } = useQa();
   const { scanner, type, date, month, result: resultFilter, view } = Route.useSearch();
   const showCalendar = (view ?? (date || type || resultFilter ? "list" : "calendar")) === "calendar";
   const navigate = Route.useNavigate();
@@ -77,7 +77,7 @@ function Reports() {
     let lastImported: Report | undefined;
     for (const file of Array.from(files)) {
       try {
-        const result = await importQaPdf(file, addReport, addFailedImport);
+        const result = await importQaPdf(file, { classifyReport, addReport, addFailedImport });
         scan.recordRead(result);
         const { report, archiveError } = result;
         lastImported = report;

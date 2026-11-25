@@ -119,13 +119,14 @@ function Monthly() {
         {items.map((item) => {
           const current = item.current;
           const status = current && MONTHLY_RESULTS[current.status];
+          const reference = current && !current.reference ? item.history.find((run) => run.reference) : undefined;
           return <li key={item.metric} className="px-4 py-3">
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               {current && monthlyResultAlert(current.status) ? <AlertCircle className={cn("size-4", status?.tone === "bad" ? "text-destructive" : "text-warn")} aria-hidden /> : current ? <FileText className="size-4 text-muted-foreground" aria-hidden /> : <CircleDashed className="size-4 text-muted-foreground" aria-hidden />}
               <span className="min-w-36 flex-1 font-medium">{item.label}</span>
               {current && status ? (
               <>
-                <Pill tone={current.reference && current.status === "ok" ? "muted" : status.tone}>{current.reference ? "Reference · " : ""}{status.label}</Pill>
+                <Pill tone={current.reference && current.status === "ok" ? "muted" : status.tone}>{current.reference ? "Reference · " : reference ? "Routine · " : ""}{status.label}</Pill>
                 {current.outside > 0 && <span className="text-xs text-muted-foreground">{current.outside} {current.outside === 1 ? "reading" : "readings"} out of limit</span>}
                 <Link to="/reports" search={{ scanner, month, type: "Monthly" }} state={{ qaReportId: current.report.id, qaReportPage: current.page }}
                   className="flex items-center gap-1 text-sm text-primary hover:underline" aria-label={`Open ${item.label} report from ${fmtDate(current.report.date)} at ${current.report.time}`}>
@@ -134,6 +135,13 @@ function Monthly() {
               </>
               ) : awaiting.has(item.label) ? <Pill tone="warn">Awaiting filing</Pill> : <Pill tone="muted">No result found</Pill>}
             </div>
+            {reference && <div className="mt-2 flex flex-wrap items-center gap-2 pl-6" aria-label="Latest reference result">
+              <Pill tone={MONTHLY_RESULTS[reference.status].tone}>Reference · {MONTHLY_RESULTS[reference.status].label}</Pill>
+              <Link to="/reports" search={{ scanner, month, type: "Monthly" }} state={{ qaReportId: reference.report.id, qaReportPage: reference.page }}
+                className="flex items-center gap-1 text-sm text-primary hover:underline" aria-label={`Open ${item.label} reference from ${fmtDate(reference.report.date)} at ${reference.report.time}`}>
+                {fmtDate(reference.report.date)} · {reference.report.time.slice(0, 5)} <ChevronRight className="size-4" aria-hidden />
+              </Link>
+            </div>}
             {item.history.length > 0 && <details className="mt-1 pl-6 text-xs text-muted-foreground">
               <summary className="w-fit cursor-pointer hover:text-foreground">Test history ({item.history.length})</summary>
               <ul className="mt-1 space-y-2 border-l pl-3">
