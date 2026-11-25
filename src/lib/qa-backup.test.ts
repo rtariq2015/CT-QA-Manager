@@ -25,7 +25,7 @@ describe("backup", () => {
   it("accepts old scanner folders without a folder type and numeric sync minutes", () => {
     const settings = { ...DEFAULT, sources: [{ name: "Flash", path: "C:\\QA" }], sync: 30 };
     const backup = parseBackup(JSON.stringify({ ...makeBackup({}, null), settings }));
-    expect(backup.settings).toEqual({ ...settings, sync: "30" });
+    expect(backup.settings).toEqual({ ...settings, sources: [{ ...settings.sources[0], scanner: "flash" }], sync: "30" });
   });
   it("rejects invalid draft settings when creating a backup", () => {
     const settings = { ...DEFAULT, sources: [{ name: " ", path: "C:\\QA" }] };

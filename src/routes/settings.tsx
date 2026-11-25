@@ -3,7 +3,8 @@ import { Plus, Trash2, Upload } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQa } from "@/lib/qa-store";
 import { makeBackup, parseBackup } from "@/lib/qa-backup";
-import { buildSettingsJson, parseSettingsJson, kindOf, normalizeConfig, folderRows, SETTINGS_KEY, DEFAULT, type Config, type FolderKind, type Source } from "@/lib/qa-settings";
+import { buildSettingsJson, parseSettingsJson, hasFolderPath, kindOf, normalizeConfig, folderRows, SETTINGS_KEY, DEFAULT, type Config, type FolderKind, type Source } from "@/lib/qa-settings";
+import { SCANNERS, type ScannerId } from "@/lib/qa-data";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -199,20 +200,29 @@ function Settings() {
         <TabsContent value="network">
           <section className="mb-6 rounded-lg border bg-card p-4">
             <h2 className="mb-1 font-medium">Scanner connections</h2>
-            {isDesktop ? <p className="mb-4 text-sm text-muted-foreground">Enter the folder that receives each scanner’s QA PDFs. For a network share, save the login before testing the connection.</p>
-              : <p className="mb-4 text-sm text-muted-foreground">Use <Link to="/folders" className="underline">Folders → Import from folder</Link> to load reports in the web app.</p>}
+            <p className="mb-4 text-sm text-muted-foreground">Choose a model to link the folder to its QA reports. The first folder name for that model appears on Today and in the top bar. {isDesktop ? "Save the network login before testing a share." : <Link to="/folders" className="underline">Import reports from a folder.</Link>}</p>
             <div className="space-y-5">
               {folderRows(cfg.sources, conn.opened).map(({ source: s, opened }, i) => {
                 const kind = kindOf(s);
                 const check = folderCheck(conn, s);
-                const configured = Boolean(s.path.trim() && s.path.trim() !== "\\\\");
+                const configured = hasFolderPath(s);
                 const key = loginKey(s);
                 const login = saved[key];
                 return (
-                  <div key={i} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[180px_1fr_auto]">
-                    <input className={inp} value={s.name} onChange={(e) => setSrc(i, { name: e.target.value })} aria-label="Scanner name" />
-                    <input className={`${inp} font-mono text-sm`} value={s.path} onChange={(e) => setSrc(i, { path: e.target.value })} aria-label="Folder path" placeholder={kind === "local" ? String.raw`C:\Users\you\Desktop\QA or E:\EXCITE-ED` : String.raw`\\server\share`} />
-                    <Button variant="outline" size="icon" className="size-11" aria-label="Remove" onClick={() => set({ sources: cfg.sources.filter((_, j) => j !== i) })}><Trash2 /></Button>
+                  <div key={i} className="grid items-end gap-2 rounded-lg border p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                    <label className="text-sm">Scanner name
+                      <input className={`${inp} mt-1`} value={s.name} onChange={(e) => setSrc(i, { name: e.target.value })} />
+                    </label>
+                    <label className="text-sm">Scanner model
+                      <select className={`${inp} mt-1`} value={s.scanner ?? ""} onChange={(e) => setSrc(i, { scanner: e.target.value as ScannerId })}>
+                        <option value="" disabled>Choose a model</option>
+                        {SCANNERS.map(({ id, model }) => <option key={id} value={id}>{model}</option>)}
+                      </select>
+                    </label>
+                    <Button variant="outline" size="icon" className="size-11" aria-label={`Remove folder for ${s.name}`} onClick={() => set({ sources: cfg.sources.filter((_, j) => j !== i) })}><Trash2 /></Button>
+                    <label className="text-sm sm:col-span-3">Folder path
+                      <input className={`${inp} mt-1 font-mono`} value={s.path} onChange={(e) => setSrc(i, { path: e.target.value })} placeholder={kind === "local" ? String.raw`C:\Users\you\Desktop\QA or E:\EXCITE-ED` : String.raw`\\server\share`} />
+                    </label>
                     <div className="flex flex-wrap items-center gap-2 sm:col-span-3">
                       <span className="text-sm text-muted-foreground">Folder type</span>
                       <div role="group" aria-label={`Folder type for ${s.name}`} className="inline-flex rounded-md border p-0.5">

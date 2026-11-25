@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSettingsJson, parseSettingsJson, kindOf, normalizeConfig, folderMatches, folderRows, unmatchedFolders, DEFAULT, type Config, type OpenedFolder, type Source } from "./qa-settings";
+import { buildSettingsJson, parseSettingsJson, kindOf, normalizeConfig, configuredScanners, folderMatches, folderRows, unmatchedFolders, DEFAULT, type Config, type OpenedFolder, type Source } from "./qa-settings";
 
 const cfg = (sources: Source[]): Config => ({ ...DEFAULT, sources });
 const parse = (text: string) => JSON.parse(text) as {
@@ -93,8 +93,38 @@ describe("folder connection status", () => {
 
 
 it("reads a copied Windows settings file and rejects an invalid replacement", () => {
-  const original = cfg([{ name: "CT Edge", path: "\\\\server\\QA", user: "HOSPITAL\\qa", kind: "network" }]);
+  const original = cfg([{ name: "Main building CT", scanner: "edge", path: "\\\\server\\QA", user: "HOSPITAL\\qa", kind: "network" }]);
   expect(parseSettingsJson("\uFEFF" + buildSettingsJson(original))).toEqual(original);
   expect(() => parseSettingsJson('{"Sources":[]}')).toThrow("Invalid QA schedule");
   expect(() => parseSettingsJson(buildSettingsJson(cfg([{ name: "", path: "C:/QA", kind: "local" }])))).toThrow("Invalid scanner");
+  expect(() => parseSettingsJson(buildSettingsJson(original).replace('"edge"', '"unknown"'))).toThrow("Invalid scanner");
+});
+
+describe("configured scanners", () => {
+  it("maps existing scanner names and folder paths while leaving uncertain legacy entries for the user", () => {
+    const sources = [
+      { name: "CT Xcite (NEW)", path: "E:\\QA" },
+      { name: "CT Flash", path: "\\\\example\\QA" },
+      { name: "Main building CT", path: "\\\\example\\QA\\CT Edge\\" },
+      { name: "MDP Building (Drive)", path: "\\\\example\\QA" },
+      { name: "CT Edge", path: "\\\\example\\QA\\CT Flash" },
+      { name: "Shared QA", path: "\\\\example\\QA" },
+    ];
+    const settings = parseSettingsJson(buildSettingsJson(cfg(sources)));
+    expect(settings.sources.map(({ scanner }) => scanner)).toEqual(["xcite", "flash", "edge", "drive", undefined, undefined]);
+  });
+
+  it("ignores empty paths and groups several folders for one model under the first saved name", () => {
+    const first: Source = { name: "New X.cite name", path: "C:\\QA", scanner: "xcite" };
+    const second: Source = { name: "Alternate X.cite folder", path: "E:\\QA", scanner: "xcite" };
+    const unassigned: Source = { name: "Shared QA", path: "\\\\example\\QA" };
+    const groups = configuredScanners([first, { name: "Empty", path: " ", scanner: "drive" }, second,
+      { name: "New scanner", path: "\\\\" }, unassigned]);
+    expect(groups).toEqual([
+      { scanner: "xcite", folders: [first, second] },
+      { scanner: undefined, folders: [unassigned] },
+    ]);
+    expect(configuredScanners([second])[0]?.folders[0].name).toBe(second.name);
+    expect(configuredScanners([])).toEqual([]);
+  });
 });
